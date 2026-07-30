@@ -54,6 +54,26 @@ def init_db():
                     sold_by TEXT,
                     timestamp DATETIME)''')
     
+    # Check for Column Updates if Table Already Exists
+    c.execute("PRAGMA table_info(sales)")
+    existing_cols = [col[1] for col in c.fetchall()]
+    cols_to_add = {
+        'bill_id': "TEXT DEFAULT 'AP-001'",
+        'customer_name': "TEXT DEFAULT 'Walk-in'",
+        'unit_price': "REAL DEFAULT 0.0",
+        'subtotal': "REAL DEFAULT 0.0",
+        'discount_pct': "REAL DEFAULT 0.0",
+        'tax_pct': "REAL DEFAULT 0.0",
+        'grand_total': "REAL DEFAULT 0.0"
+    }
+
+    for col_name, col_type in cols_to_add.items():
+        if col_name not in existing_cols:
+            try:
+                c.execute(f"ALTER TABLE sales ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass
+
     # Default Accounts
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'admin123', 'admin')")
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('staff1', 'staff123', 'staff')")
@@ -72,16 +92,16 @@ def generate_receipt_html(bill_id, print_auto=False):
     conn.close()
     
     if df.empty:
-        return "<p>Bill not found!</p>"
+        return "<p style='color:red;'>Bill not found!</p>"
 
     row0 = df.iloc[0]
     cust_name = row0['customer_name']
     biller = row0['sold_by']
     date_str = row0['timestamp']
-    subtotal = row0['subtotal']
-    discount_pct = row0['discount_pct']
-    tax_pct = row0['tax_pct']
-    grand_total = row0['grand_total']
+    subtotal = float(row0.get('subtotal', 0.0))
+    discount_pct = float(row0.get('discount_pct', 0.0))
+    tax_pct = float(row0.get('tax_pct', 0.0))
+    grand_total = float(row0.get('grand_total', 0.0))
 
     disc_val = subtotal * (discount_pct / 100.0)
     tax_val = (subtotal - disc_val) * (tax_pct / 100.0)
@@ -357,11 +377,11 @@ if st.session_state.role == "staff":
             rc_html = generate_receipt_html(st.session_state.last_printed_bill, print_auto=False)
             st.components.v1.html(rc_html, height=450, scrolling=True)
 
-    # TAB 2: RE-PRINT HISTORY
+    # TAB 2: RE-PRINT HISTORY (FIXED QUERY)
     with staff_tabs[1]:
         st.subheader("Previous Bills & Thermal Re-Printing")
         conn = get_connection()
-        bills_df = pd.read_sql("SELECT DISTINCT bill_id, customer_name, grand_total, sold_by, timestamp FROM sales ORDER BY id DESC LIMIT 50", conn)
+        bills_df = pd.read_sql("SELECT bill_id, customer_name, grand_total, sold_by, timestamp FROM sales GROUP BY bill_id ORDER BY MAX(id) DESC LIMIT 50", conn)
         conn.close()
 
         if not bills_df.empty:
@@ -388,7 +408,8 @@ elif st.session_state.role == "admin":
         if not sales_df.empty:
             m1, m2, m3 = st.columns(3)
             unique_bills = sales_df.drop_duplicates(subset=['bill_id'])
-            total_rev = unique_bills['grand_total'].sum()
+            
+            total_rev = unique_bills['grand_total'].sum() if 'grand_total' in unique_bills.columns else unique_bills['total_price'].sum()
                 
             m1.metric("Total Net Revenue", f"Rs. {total_rev:,.2f}")
             m2.metric("Total Items Sold", int(sales_df['qty'].sum()))
