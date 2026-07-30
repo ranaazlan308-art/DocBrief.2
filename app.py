@@ -1,8 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-import qrcode
-from io import BytesIO
+import urllib.parse
 from datetime import datetime, timedelta
 
 # ---------------------------------------------------------
@@ -64,8 +63,8 @@ st.markdown("""
         .jazzcash-box {
             background: linear-gradient(135deg, #ff8000 0%, #e60000 100%);
             color: white;
-            padding: 15px;
-            border-radius: 12px;
+            padding: 12px;
+            border-radius: 10px;
             text-align: center;
             margin-top: 10px;
         }
@@ -144,18 +143,11 @@ def init_db():
 
 init_db()
 
-# Helper: QR Code Generator
-def generate_jazzcash_qr(amount, bill_id, till_id="00012345"):
-    # Simulated JazzCash Payment Payload Structure
+# Helper: No-Dependency QR Code Generator URL
+def get_jazzcash_qr_url(amount, bill_id, till_id="00012345"):
     payload = f"JazzCash Merchant POS|TillID:{till_id}|Bill:{bill_id}|Amount:{amount:.2f}|Currency:PKR"
-    qr = qrcode.QRCode(version=1, box_size=6, border=2)
-    qr.add_data(payload)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="#e60000", back_color="white")
-    
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    encoded_payload = urllib.parse.quote(payload)
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encoded_payload}&color=e60000"
 
 # ---------------------------------------------------------
 # 3. THERMAL RECEIPT HTML ENGINE
@@ -404,10 +396,10 @@ if st.session_state.role == "staff":
 
                 st.markdown(f"### Grand Total: <span style='color:#1E88E5;'>Rs. {grand_total:,.2f}</span>", unsafe_allow_html=True)
 
-                # JAZZCASH DYNAMIC QR DISPLAY
+                # JAZZCASH DYNAMIC QR DISPLAY (NO EXTERNAL LIBRARY NEEDED)
                 if pay_method == "JazzCash":
                     temp_bill_id = f"AP-{datetime.now().strftime('%M%S')}"
-                    qr_img_bytes = generate_jazzcash_qr(grand_total, temp_bill_id)
+                    qr_url = get_jazzcash_qr_url(grand_total, temp_bill_id)
                     
                     st.markdown("""
                     <div class='jazzcash-box'>
@@ -415,7 +407,7 @@ if st.session_state.role == "staff":
                         <small>Scan using JazzCash App to Pay</small>
                     </div>
                     """, unsafe_allow_html=True)
-                    st.image(qr_img_bytes, caption=f"Scan & Pay Rs. {grand_total:,.2f}", width=200)
+                    st.image(qr_url, caption=f"Scan & Pay Rs. {grand_total:,.2f}", width=180)
 
                 b_col1, b_col2 = st.columns(2)
                 with b_col1:
