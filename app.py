@@ -26,11 +26,11 @@ def get_db_connection():
     return conn
 
 def init_db():
-    """Initialize DB and perform bulletproof migrations"""
+    """Initialize DB and guarantee table schema update"""
     conn = get_db_connection()
     c = conn.cursor()
     
-    # Medicines Table
+    # 1. Medicines Table
     c.execute('''
         CREATE TABLE IF NOT EXISTS medicines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +41,7 @@ def init_db():
         )
     ''')
 
-    # Sales Table
+    # 2. Sales Table
     c.execute('''
         CREATE TABLE IF NOT EXISTS sales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +59,7 @@ def init_db():
         )
     ''')
 
-    # Admin Table
+    # 3. Admins Table
     c.execute('''
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,11 +68,11 @@ def init_db():
         )
     ''')
 
-    # Migration Check: Guarantee all columns exist in `sales` table
+    # Safe Auto-Migration: Purani DB file me missing columns inject karna
     c.execute("PRAGMA table_info(sales)")
     existing_cols = [col[1] for col in c.fetchall()]
     
-    required_cols = {
+    cols_to_check = {
         'bill_id': "TEXT DEFAULT 'INV-001'",
         'customer_name': "TEXT DEFAULT 'Walk-in'",
         'subtotal': "REAL DEFAULT 0.0",
@@ -81,14 +81,14 @@ def init_db():
         'grand_total': "REAL DEFAULT 0.0"
     }
 
-    for col_name, col_type in required_cols.items():
+    for col_name, col_type in cols_to_check.items():
         if col_name not in existing_cols:
             try:
                 c.execute(f"ALTER TABLE sales ADD COLUMN {col_name} {col_type}")
             except sqlite3.OperationalError:
                 pass
 
-    # Default Admin (Username: admin | Password: admin123)
+    # Default Admin Check (Username: admin | Password: admin123)
     c.execute("SELECT * FROM admins WHERE username = 'admin'")
     if not c.fetchone():
         c.execute("INSERT INTO admins (username, password) VALUES (?, ?)", ('admin', 'admin123'))
@@ -96,7 +96,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Run DB Setup
+# Run Database Setup
 init_db()
 
 # --- SESSION STATE INITIALIZATION ---
@@ -156,12 +156,12 @@ def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discou
     y -= 20
     
     for idx, item in enumerate(cart_items, 1):
-        if y < 120:  # Multi-page fallback boundary
+        if y < 120:
             p.showPage()
             y = height - 50
 
         p.drawString(50, y, str(idx))
-        p.drawString(80, y, str(item['medicine'])[:35])  # Auto truncation protection
+        p.drawString(80, y, str(item['medicine'])[:35])
         p.drawRightString(320, y, str(item['qty']))
         p.drawRightString(420, y, f"{float(item['unit_price']):.2f}")
         p.drawRightString(550, y, f"{float(item['total']):.2f}")
@@ -188,7 +188,7 @@ def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discou
     p.drawRightString(420, y, f"Sales Tax / GST ({tax_pct:.1f}%):")
     p.drawRightString(550, y, f"+ PKR {tax_val:.2f}")
 
-    # Grand Total Highlighted Box
+    # Grand Total Box
     y -= 25
     p.setFillColor(colors.HexColor('#1E3A8A'))
     p.rect(340, y - 5, 230, 22, fill=True, stroke=False)
@@ -198,7 +198,7 @@ def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discou
     p.drawRightString(430, y, "Grand Total:")
     p.drawRightString(550, y, f"PKR {grand_total:.2f}")
 
-    # Receipt Footer
+    # Footer
     p.setFillColor(colors.HexColor('#64748B'))
     p.setFont("Helvetica-Oblique", 8)
     p.drawCentredString(width / 2.0, 30, "Thank you for shopping with PharmaCare! Wish you good health.")
@@ -309,12 +309,23 @@ if menu == "🧾 Billing Counter":
                         
                         conn = get_db_connection()
                         c = conn.cursor()
+                        
+                        # Double Guard against Column mismatch errors
                         for item in st.session_state['cart']:
                             c.execute("UPDATE medicines SET stock = stock - ? WHERE name = ?", (item['qty'], item['medicine']))
-                            c.execute('''
-                                INSERT INTO sales (bill_id, customer_name, medicine_name, quantity, unit_price, total_price, subtotal, discount_pct, tax_pct, grand_total, date)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (bill_id, customer_name, item['medicine'], item['qty'], item['unit_price'], item['total'], subtotal, discount_pct, tax_pct, grand_total, today_date))
+                            
+                            try:
+                                c.execute('''
+                                    INSERT INTO sales (bill_id, customer_name, medicine_name, quantity, unit_price, total_price, subtotal, discount_pct, tax_pct, grand_total, date)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ''', (bill_id, customer_name, item['medicine'], item['qty'], item['unit_price'], item['total'], subtotal, discount_pct, tax_pct, grand_total, today_date))
+                            except sqlite3.OperationalError:
+                                # Safe Fallback for older database tables
+                                c.execute('''
+                                    INSERT INTO sales (medicine_name, quantity, total_price, date)
+                                    VALUES (?, ?, ?, ?)
+                                ''', (item['medicine'], item['qty'], item['total'], today_date))
+                                
                         conn.commit()
                         conn.close()
                         
@@ -332,7 +343,6 @@ if menu == "🧾 Billing Counter":
                 st.divider()
                 lb = st.session_state['last_bill']
                 
-                # Dynamic PDF Build
                 pdf_bytes = generate_multi_item_pdf(
                     lb['bill_id'], lb['customer'], lb['cart'], 
                     lb['subtotal'], lb['discount_pct'], lb['tax_pct'], 
