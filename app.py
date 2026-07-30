@@ -4,14 +4,13 @@ import pandas as pd
 from datetime import datetime
 import io
 
-# ReportLab Canvas Engine (Zero-Error PDF Builder)
-from reportlab.lib.pagesizes import letter
+# ReportLab Thermal Receipt Engine
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="A.M Pharma POS & Inventory System", 
+    page_title="PharmaCare POS & Inventory System", 
     page_icon="💊", 
     layout="wide"
 )
@@ -68,7 +67,7 @@ def init_db():
         )
     ''')
 
-    # Safe Auto-Migration: Purani DB file me missing columns inject karna
+    # Migration Check for Existing Database
     c.execute("PRAGMA table_info(sales)")
     existing_cols = [col[1] for col in c.fetchall()]
     
@@ -105,104 +104,123 @@ if 'cart' not in st.session_state:
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# --- ULTRA-ROBUST PDF INVOICE GENERATOR ---
-def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discount_pct, tax_pct, grand_total, bill_date):
+# --- 🧾 THERMAL RECEIPT (ATM STYLE 80MM) GENERATOR ---
+def generate_thermal_receipt_pdf(bill_id, customer_name, cart_items, subtotal, discount_pct, tax_pct, grand_total, bill_date):
     buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
     
-    # Header Section
-    p.setFillColor(colors.HexColor('#1E3A8A'))
-    p.rect(0, height - 80, width, 80, fill=True, stroke=False)
+    # Standard 80mm POS Slip Dimension (226 points width)
+    page_width = 226.0
     
-    p.setFillColor(colors.white)
-    p.setFont("Helvetica-Bold", 20)
-    p.drawCentredString(width / 2.0, height - 35, "PHARMACARE PHARMACY")
-    p.setFont("Helvetica", 10)
-    p.drawCentredString(width / 2.0, height - 55, "Official Sales Tax Invoice & Cash Receipt")
-
-    # Meta Data Section
-    p.setFillColor(colors.black)
-    p.setFont("Helvetica-Bold", 10)
+    # Calculate Dynamic Height based on items list
+    base_height = 280.0
+    item_height = len(cart_items) * 22.0
+    page_height = base_height + item_height
     
-    y = height - 110
-    p.drawString(40, y, f"Customer Name: {str(customer_name)}")
-    p.drawString(380, y, f"Invoice No: #{str(bill_id)}")
+    p = canvas.Canvas(buffer, pagesize=(page_width, page_height))
     
-    y -= 18
-    p.drawString(40, y, f"Date & Time: {str(bill_date)}")
-    p.drawString(380, y, "Payment Mode: Counter Cash")
-
-    p.setStrokeColor(colors.HexColor('#CBD5E1'))
-    p.setLineWidth(1)
-    p.line(40, y - 10, width - 40, y - 10)
-
-    # Items Table Header
-    y -= 35
-    p.setFillColor(colors.HexColor('#1E3A8A'))
-    p.rect(40, y - 5, width - 80, 20, fill=True, stroke=False)
+    y = page_height - 18
     
-    p.setFillColor(colors.white)
-    p.setFont("Helvetica-Bold", 9)
-    p.drawString(50, y, "#")
-    p.drawString(80, y, "Item Description")
-    p.drawRightString(320, y, "Qty")
-    p.drawRightString(420, y, "Price (PKR)")
-    p.drawRightString(550, y, "Total (PKR)")
-
-    # Table Items List
-    p.setFillColor(colors.black)
-    p.setFont("Helvetica", 9)
-    y -= 20
+    # Store Header
+    p.setFont("Helvetica-Bold", 12)
+    p.drawCentredString(page_width / 2.0, y, "PHARMACARE PHARMACY")
     
-    for idx, item in enumerate(cart_items, 1):
-        if y < 120:
-            p.showPage()
-            y = height - 50
-
-        p.drawString(50, y, str(idx))
-        p.drawString(80, y, str(item['medicine'])[:35])
-        p.drawRightString(320, y, str(item['qty']))
-        p.drawRightString(420, y, f"{float(item['unit_price']):.2f}")
-        p.drawRightString(550, y, f"{float(item['total']):.2f}")
+    y -= 12
+    p.setFont("Helvetica", 8)
+    p.drawCentredString(page_width / 2.0, y, "Healthcare & Medical Store")
+    y -= 10
+    p.drawCentredString(page_width / 2.0, y, "Helpline: +92 300 0000000")
+    
+    # Dashed Line
+    y -= 8
+    p.setLineWidth(0.5)
+    p.setStrokeColor(colors.black)
+    p.setDash(2, 2)
+    p.line(10, y, page_width - 10, y)
+    
+    # Receipt Meta Details
+    p.setDash()  # Solid line reset
+    y -= 12
+    p.setFont("Helvetica-Bold", 8)
+    p.drawString(10, y, f"Inv #: {bill_id}")
+    
+    y -= 10
+    p.setFont("Helvetica", 8)
+    p.drawString(10, y, f"Date: {bill_date}")
+    
+    y -= 10
+    p.drawString(10, y, f"Customer: {customer_name[:22]}")
+    
+    # Dashed Line
+    y -= 8
+    p.setDash(2, 2)
+    p.line(10, y, page_width - 10, y)
+    
+    # Table Header
+    y -= 12
+    p.setDash()
+    p.setFont("Helvetica-Bold", 8)
+    p.drawString(10, y, "Item")
+    p.drawString(110, y, "Qty x Price")
+    p.drawRightString(page_width - 10, y, "Total")
+    
+    y -= 5
+    p.setDash(1, 1)
+    p.line(10, y, page_width - 10, y)
+    
+    # Items Breakdown
+    p.setFont("Helvetica", 8)
+    for item in cart_items:
+        y -= 12
+        # Item Name
+        p.drawString(10, y, str(item['medicine'])[:18])
+        # Qty x Unit Price
+        p.drawString(110, y, f"{item['qty']} x {float(item['unit_price']):.0f}")
+        # Line Total
+        p.drawRightString(page_width - 10, y, f"{float(item['total']):.1f}")
+    
+    # Dashed Line
+    y -= 8
+    p.setDash(2, 2)
+    p.line(10, y, page_width - 10, y)
+    
+    # Summary Totals
+    p.setDash()
+    p.setFont("Helvetica", 8)
+    
+    y -= 12
+    p.drawString(90, y, "Subtotal:")
+    p.drawRightString(page_width - 10, y, f"{subtotal:.2f}")
+    
+    if discount_pct > 0:
+        disc_val = subtotal * (discount_pct / 100)
+        y -= 10
+        p.drawString(90, y, f"Disc ({discount_pct:.0f}%):")
+        p.drawRightString(page_width - 10, y, f"-{disc_val:.2f}")
         
-        y -= 15
-        p.setStrokeColor(colors.HexColor('#F1F5F9'))
-        p.line(40, y + 10, width - 40, y + 10)
-
-    # Calculations Summary Block
-    y -= 15
-    disc_val = subtotal * (discount_pct / 100)
-    taxable_amt = subtotal - disc_val
-    tax_val = taxable_amt * (tax_pct / 100)
-
-    p.setFont("Helvetica", 9)
-    p.drawRightString(420, y, "Subtotal:")
-    p.drawRightString(550, y, f"PKR {subtotal:.2f}")
-
-    y -= 15
-    p.drawRightString(420, y, f"Discount ({discount_pct:.1f}%):")
-    p.drawRightString(550, y, f"- PKR {disc_val:.2f}")
-
-    y -= 15
-    p.drawRightString(420, y, f"Sales Tax / GST ({tax_pct:.1f}%):")
-    p.drawRightString(550, y, f"+ PKR {tax_val:.2f}")
-
-    # Grand Total Box
-    y -= 25
-    p.setFillColor(colors.HexColor('#1E3A8A'))
-    p.rect(340, y - 5, 230, 22, fill=True, stroke=False)
+    if tax_pct > 0:
+        disc_val = subtotal * (discount_pct / 100)
+        taxable_amt = subtotal - disc_val
+        tax_val = taxable_amt * (tax_pct / 100)
+        y -= 10
+        p.drawString(90, y, f"Tax ({tax_pct:.0f}%):")
+        p.drawRightString(page_width - 10, y, f"+{tax_val:.2f}")
+        
+    y -= 14
+    p.setFont("Helvetica-Bold", 10)
+    p.drawString(80, y, "TOTAL:")
+    p.drawRightString(page_width - 10, y, f"PKR {grand_total:.2f}")
     
-    p.setFillColor(colors.white)
-    p.setFont("Helvetica-Bold", 11)
-    p.drawRightString(430, y, "Grand Total:")
-    p.drawRightString(550, y, f"PKR {grand_total:.2f}")
-
-    # Footer
-    p.setFillColor(colors.HexColor('#64748B'))
-    p.setFont("Helvetica-Oblique", 8)
-    p.drawCentredString(width / 2.0, 30, "Thank you for shopping with PharmaCare! Wish you good health.")
-
+    # Footer Note
+    y -= 12
+    p.setDash(2, 2)
+    p.line(10, y, page_width - 10, y)
+    
+    y -= 14
+    p.setFont("Helvetica-Oblique", 7)
+    p.drawCentredString(page_width / 2.0, y, "*** Thank You For Your Visit ***")
+    y -= 9
+    p.drawCentredString(page_width / 2.0, y, "Get Well Soon!")
+    
     p.showPage()
     p.save()
     
@@ -310,7 +328,6 @@ if menu == "🧾 Billing Counter":
                         conn = get_db_connection()
                         c = conn.cursor()
                         
-                        # Double Guard against Column mismatch errors
                         for item in st.session_state['cart']:
                             c.execute("UPDATE medicines SET stock = stock - ? WHERE name = ?", (item['qty'], item['medicine']))
                             
@@ -320,7 +337,6 @@ if menu == "🧾 Billing Counter":
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 ''', (bill_id, customer_name, item['medicine'], item['qty'], item['unit_price'], item['total'], subtotal, discount_pct, tax_pct, grand_total, today_date))
                             except sqlite3.OperationalError:
-                                # Safe Fallback for older database tables
                                 c.execute('''
                                     INSERT INTO sales (medicine_name, quantity, total_price, date)
                                     VALUES (?, ?, ?, ?)
@@ -343,17 +359,18 @@ if menu == "🧾 Billing Counter":
                 st.divider()
                 lb = st.session_state['last_bill']
                 
-                pdf_bytes = generate_multi_item_pdf(
+                # Thermal PDF Generator Function Call
+                pdf_bytes = generate_thermal_receipt_pdf(
                     lb['bill_id'], lb['customer'], lb['cart'], 
                     lb['subtotal'], lb['discount_pct'], lb['tax_pct'], 
                     lb['grand_total'], lb['date']
                 )
                 
-                st.subheader("📄 Printed Bill PDF")
+                st.subheader("🧾 ATM / POS Style Thermal Receipt")
                 st.download_button(
-                    label=f"📥 Download Printable Invoice PDF (#{lb['bill_id']})",
+                    label=f"🖨️ Download Thermal Receipt PDF (#{lb['bill_id']})",
                     data=pdf_bytes,
-                    file_name=f"Invoice_{lb['bill_id']}.pdf",
+                    file_name=f"Thermal_Receipt_{lb['bill_id']}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
