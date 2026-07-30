@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- DATABASE HELPER FUNCTIONS ---
+# --- DATABASE CONFIGURATION & AUTO-MIGRATION ---
 DB_NAME = "pharmacy.db"
 
 def get_db_connection():
@@ -29,7 +29,7 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
     
-    # Medicines Table
+    # Medicines Table Creation
     c.execute('''
         CREATE TABLE IF NOT EXISTS medicines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,7 +40,7 @@ def init_db():
         )
     ''')
 
-    # Sales Table
+    # Sales Table Creation
     c.execute('''
         CREATE TABLE IF NOT EXISTS sales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,15 +50,15 @@ def init_db():
             quantity INTEGER,
             unit_price REAL,
             total_price REAL,
-            subtotal REAL,
-            discount_pct REAL,
-            tax_pct REAL,
-            grand_total REAL,
+            subtotal REAL DEFAULT 0.0,
+            discount_pct REAL DEFAULT 0.0,
+            tax_pct REAL DEFAULT 0.0,
+            grand_total REAL DEFAULT 0.0,
             date TEXT
         )
     ''')
 
-    # Admin Credentials Table
+    # Admin Credentials Table Creation
     c.execute('''
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,13 +67,18 @@ def init_db():
         )
     ''')
 
-    # Safe Schema Alterations
+    # Safe Auto-Migration for Old DB Schemas
     existing_columns = [col[1] for col in c.execute("PRAGMA table_info(sales)").fetchall()]
-    for col_name in ['subtotal', 'discount_pct', 'tax_pct', 'grand_total']:
+    new_cols = ['bill_id', 'customer_name', 'subtotal', 'discount_pct', 'tax_pct', 'grand_total']
+    
+    for col_name in new_cols:
         if col_name not in existing_columns:
-            c.execute(f"ALTER TABLE sales ADD COLUMN {col_name} REAL DEFAULT 0.0")
+            if col_name in ['bill_id', 'customer_name']:
+                c.execute(f"ALTER TABLE sales ADD COLUMN {col_name} TEXT DEFAULT 'N/A'")
+            else:
+                c.execute(f"ALTER TABLE sales ADD COLUMN {col_name} REAL DEFAULT 0.0")
 
-    # Default Admin Setup (username: admin | password: admin123)
+    # Default Admin Credentials (Username: admin | Password: admin123)
     c.execute("SELECT * FROM admins WHERE username = 'admin'")
     if not c.fetchone():
         c.execute("INSERT INTO admins (username, password) VALUES (?, ?)", ('admin', 'admin123'))
@@ -81,10 +86,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Database Initializer Call
+# Initialize Database Schema
 init_db()
 
-# --- SESSION STATE INITIALIZATION ---
+# --- SESSION STATE MANAGEMENT ---
 if 'cart' not in st.session_state:
     st.session_state['cart'] = []
 if 'logged_in' not in st.session_state:
@@ -97,16 +102,16 @@ def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discou
     story = []
     styles = getSampleStyleSheet()
 
-    # Header
+    # Document Header Title
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=20, alignment=1, textColor=colors.HexColor('#1E3A8A'))
     story.append(Paragraph("<b>PHARMACARE PHARMACY</b>", title_style))
-    story.append(Paragraph("Official Tax Invoice & Receipt", ParagraphStyle('Sub', parent=styles['Normal'], alignment=1, textColor=colors.gray)))
+    story.append(Paragraph("Official Tax Invoice & Sales Receipt", ParagraphStyle('Sub', parent=styles['Normal'], alignment=1, textColor=colors.gray)))
     story.append(Spacer(1, 15))
 
-    # Bill Metadata Header
+    # Metadata Section
     meta_data = [
-        [f"Customer Name: {customer_name}", f"Invoice Date: {bill_date}"],
-        [f"Bill ID: #{bill_id}", "Payment Mode: Cash"]
+        [f"Customer Name: {customer_name}", f"Date & Time: {bill_date}"],
+        [f"Invoice No: #{bill_id}", "Payment Method: Cash / Counter"]
     ]
     t_meta = Table(meta_data, colWidths=[250, 250])
     t_meta.setStyle(TableStyle([
@@ -118,8 +123,8 @@ def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discou
     story.append(t_meta)
     story.append(Spacer(1, 15))
 
-    # Items Table Header
-    table_data = [["#", "Item / Medicine", "Qty", "Unit Price (PKR)", "Total (PKR)"]]
+    # Purchased Items Table Layout
+    table_data = [["#", "Item Description", "Qty", "Unit Price (PKR)", "Total (PKR)"]]
     for idx, item in enumerate(cart_items, 1):
         table_data.append([
             str(idx),
@@ -133,7 +138,7 @@ def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discou
     taxable_amt = subtotal - disc_val
     tax_val = taxable_amt * (tax_pct / 100)
 
-    # Billing Financials Summary
+    # Financial Break-up Section
     table_data.append(["", "", "", "Subtotal:", f"PKR {subtotal:.2f}"])
     table_data.append(["", "", "", f"Discount ({discount_pct:.1f}%):", f"- PKR {disc_val:.2f}"])
     table_data.append(["", "", "", f"GST / Sales Tax ({tax_pct:.1f}%):", f"+ PKR {tax_val:.2f}"])
@@ -153,18 +158,19 @@ def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discou
     story.append(t_items)
     story.append(Spacer(1, 25))
 
-    # Footer Notes
+    # Invoice Footer
     footer_style = ParagraphStyle('FooterStyle', parent=styles['Normal'], fontSize=9, alignment=1, textColor=colors.gray)
-    story.append(Paragraph("Thank you for choosing PharmaCare! Get well soon.", footer_style))
-    story.append(Paragraph("This is an auto-calculated computer-generated tax invoice.", footer_style))
+    story.append(Paragraph("Thank you for your business! Wish you good health.", footer_style))
+    story.append(Paragraph("This is an auto-generated official digital tax receipt.", footer_style))
 
     doc.build(story)
     buffer.seek(0)
     return buffer
 
-# --- SIDEBAR NAVIGATION ---
+# --- SIDEBAR NAVIGATION CONTROL ---
 st.sidebar.title("💊 PharmaCare POS")
 
+# Role status UI
 if st.session_state['logged_in']:
     st.sidebar.success("🔒 Admin Logged In")
     if st.sidebar.button("Logout 🚪", use_container_width=True):
@@ -173,6 +179,7 @@ if st.session_state['logged_in']:
 else:
     st.sidebar.info("👤 Staff Mode (Limited Access)")
 
+# Accessible Modules mapping
 nav_options = ["🧾 Multi-Item Billing Counter"]
 if st.session_state['logged_in']:
     nav_options.extend(["📦 Medicine Inventory", "📊 Sales Reports", "⚙️ Admin Settings"])
@@ -181,9 +188,9 @@ else:
 
 menu = st.sidebar.radio("Navigation Menu", nav_options)
 
-# ==========================================
-# 1. MULTI-ITEM BILLING COUNTER WITH AUTO TAX & DISCOUNT
-# ==========================================
+# =========================================================
+# MODULE 1: MULTI-ITEM BILLING & TAX/DISCOUNT COUNTER
+# =========================================================
 if menu == "🧾 Multi-Item Billing Counter":
     st.title("🧾 Billing Counter & Auto Tax/Discount Calculator")
     
@@ -192,11 +199,11 @@ if menu == "🧾 Multi-Item Billing Counter":
     conn.close()
     
     if med_df.empty:
-        st.warning("⚠️ Inventory khali hai. Pehle Admin Panel se medicines add karein!")
+        st.warning("⚠️ Inventory khali hai ya koi item in-stock nahi hai. Admin panel se medicine add karein!")
     else:
         col_left, col_right = st.columns([1.2, 1.8])
         
-        # Left Panel: Items Selection
+        # Left Panel: Medicine & Cart Addition Controls
         with col_left:
             st.subheader("➕ Add Items to Cart")
             customer_name = st.text_input("Customer Name", value="Walk-in Customer")
@@ -207,13 +214,14 @@ if menu == "🧾 Multi-Item Billing Counter":
             max_stock = int(med_info['stock'])
             unit_price = float(med_info['price'])
             
+            # Stock reserved in active session cart
             in_cart_qty = sum(item['qty'] for item in st.session_state['cart'] if item['medicine'] == selected_med)
             available_stock = max_stock - in_cart_qty
             
-            st.info(f"💰 Price: **PKR {unit_price:.2f}** | 📦 Stock Available: **{available_stock}**")
+            st.info(f"💰 Unit Price: **PKR {unit_price:.2f}** | 📦 Stock Left: **{available_stock}**")
             
             if available_stock > 0:
-                qty = st.number_input("Quantity", min_value=1, max_value=available_stock, value=1, step=1)
+                qty = st.number_input("Select Quantity", min_value=1, max_value=available_stock, value=1, step=1)
                 
                 if st.button("Add to Cart 🛒", type="secondary", use_container_width=True):
                     st.session_state['cart'].append({
@@ -225,40 +233,40 @@ if menu == "🧾 Multi-Item Billing Counter":
                     st.success(f"Added {qty}x {selected_med} to cart!")
                     st.rerun()
             else:
-                st.error("⚠️ Ab is medicine ka stock cart me add karne ke liye khatam hai!")
+                st.error("⚠️ Is item ka tamam stock aapke cart me add ho chuka hai!")
 
-        # Right Panel: Cart & Calculator
+        # Right Panel: Cart Details & Financial Calculation
         with col_right:
-            st.subheader("🛒 Current Cart & Bill Calculation")
+            st.subheader("🛒 Current Cart Breakdown")
             
             if not st.session_state['cart']:
-                st.info("Cart abhi khali hai. Items select karke cart me add karein.")
+                st.info("Cart khali hai. Select karke item add karein.")
             else:
                 cart_df = pd.DataFrame(st.session_state['cart'])
                 st.dataframe(
                     cart_df[['medicine', 'qty', 'unit_price', 'total']].rename(columns={
-                        'medicine': 'Medicine', 'qty': 'Qty', 'unit_price': 'Unit Price (PKR)', 'total': 'Total (PKR)'
+                        'medicine': 'Medicine', 'qty': 'Qty', 'unit_price': 'Price (PKR)', 'total': 'Total (PKR)'
                     }),
                     use_container_width=True
                 )
                 
-                # --- AUTO TAX & DISCOUNT CALCULATOR SECTION ---
+                # Auto Calculator Section
                 st.markdown("### 🧮 Auto Calculator (Tax & Discount)")
                 subtotal = float(cart_df['total'].sum())
                 
                 d_col, t_col = st.columns(2)
                 with d_col:
-                    discount_pct = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=0.0, step=0.5, help="Set discount in percentage")
+                    discount_pct = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
                 with t_col:
-                    tax_pct = st.number_input("GST / Sales Tax (%)", min_value=0.0, max_value=50.0, value=17.0, step=0.5, help="Set tax percentage (Default 17%)")
+                    tax_pct = st.number_input("GST / Sales Tax (%)", min_value=0.0, max_value=50.0, value=17.0, step=0.5)
                 
-                # Calculations
+                # Financial Calculations
                 discount_val = subtotal * (discount_pct / 100)
                 taxable_amount = subtotal - discount_val
                 tax_val = taxable_amount * (tax_pct / 100)
                 grand_total = taxable_amount + tax_val
                 
-                # Dynamic Display
+                # Real-Time UI Metrics Display
                 st.divider()
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Subtotal", f"PKR {subtotal:.2f}")
@@ -275,8 +283,7 @@ if menu == "🧾 Multi-Item Billing Counter":
                         st.rerun()
                         
                 with btn_col2:
-                    if st.button("Generate Bill & Checkout 🚀", type="primary", use_container_width=True):
-                        # Generate Auto Bill ID
+                    if st.button("Checkout & Process Bill 🚀", type="primary", use_container_width=True):
                         bill_id = f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         today_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
@@ -284,9 +291,9 @@ if menu == "🧾 Multi-Item Billing Counter":
                         c = conn.cursor()
                         
                         for item in st.session_state['cart']:
-                            # Update Inventory Stock
+                            # Update DB Stock
                             c.execute("UPDATE medicines SET stock = stock - ? WHERE name = ?", (item['qty'], item['medicine']))
-                            # Record Sale with Tax and Discount Metrics
+                            # Insert Sales Ledger
                             c.execute('''
                                 INSERT INTO sales (bill_id, customer_name, medicine_name, quantity, unit_price, total_price, subtotal, discount_pct, tax_pct, grand_total, date) 
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -295,6 +302,7 @@ if menu == "🧾 Multi-Item Billing Counter":
                         conn.commit()
                         conn.close()
                         
+                        # Store in state for PDF generator
                         st.session_state['last_checkout'] = {
                             'bill_id': bill_id,
                             'customer': customer_name,
@@ -307,10 +315,10 @@ if menu == "🧾 Multi-Item Billing Counter":
                         }
                         
                         st.session_state['cart'] = []
-                        st.success(f"✅ Invoice #{bill_id} generated & saved in database!")
+                        st.success(f"✅ Invoice #{bill_id} generated & saved successfully!")
                         st.rerun()
 
-            # PDF Download Component
+            # Printable PDF Generation Card
             if 'last_checkout' in st.session_state:
                 st.divider()
                 lc = st.session_state['last_checkout']
@@ -323,19 +331,19 @@ if menu == "🧾 Multi-Item Billing Counter":
                 )
                 
                 st.download_button(
-                    label=f"📥 Download Printable PDF Receipt (#{lc['bill_id']})",
+                    label=f"📥 Download Printable PDF Invoice (#{lc['bill_id']})",
                     data=pdf_bytes,
                     file_name=f"Invoice_{lc['bill_id']}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
 
-# ==========================================
-# 2. ADMIN LOGIN PAGE
-# ==========================================
+# =========================================================
+# MODULE 2: ADMIN AUTHENTICATION
+# =========================================================
 elif menu == "🔑 Admin Login":
-    st.title("🔑 Admin / Owner Login")
-    st.caption("Default Login Details: Username = `admin` | Password = `admin123`")
+    st.title("🔑 Admin / Owner Login Panel")
+    st.caption("Default Admin Login Details: Username = `admin` | Password = `admin123`")
     
     with st.form("login_form"):
         u_name = st.text_input("Username").strip()
@@ -350,18 +358,19 @@ elif menu == "🔑 Admin Login":
             
             if row:
                 st.session_state['logged_in'] = True
-                st.success("✅ Welcome Admin! Access Granted.")
+                st.success("✅ Logged in successfully! Admin permissions granted.")
                 st.rerun()
             else:
-                st.error("❌ Invalid Credentials!")
+                st.error("❌ Invalid Username or Password!")
 
-# ==========================================
-# 3. MEDICINE INVENTORY (ADMIN ONLY)
-# ==========================================
+# =========================================================
+# MODULE 3: MEDICINE INVENTORY MANAGEMENT
+# =========================================================
 elif menu == "📦 Medicine Inventory":
     st.title("📦 Medicine Inventory Management")
     tab1, tab2, tab3 = st.tabs(["📋 Current Stock List", "✏️ Edit / Update Stock", "➕ Add New Medicine"])
     
+    # Stock Listing View
     with tab1:
         conn = get_db_connection()
         df_inv = pd.read_sql_query("SELECT id AS 'ID', name AS 'Medicine', category AS 'Category', price AS 'Price (PKR)', stock AS 'Stock Qty' FROM medicines", conn)
@@ -374,8 +383,9 @@ elif menu == "📦 Medicine Inventory":
                 st.error("⚠️ Low Stock Alert (Less than 10 units left):")
                 st.dataframe(low_stock, use_container_width=True)
         else:
-            st.info("Inventory is currently empty.")
+            st.info("Inventory currently khali hai. Medicine add karein.")
 
+    # Edit and Delete Controls
     with tab2:
         st.subheader("✏️ Edit Stock Details")
         
@@ -418,7 +428,7 @@ elif menu == "📦 Medicine Inventory":
             with col_u2:
                 st.write("---")
                 st.warning("⚠️ **Delete Medicine**")
-                st.write(f"Are you sure you want to delete **{curr_med['name']}**?")
+                st.write(f"Kya aap **{curr_med['name']}** ko inventory se permanently delete karna chahte hain?")
                 if st.button(f"Delete {curr_med['name']} 🗑️", use_container_width=True):
                     conn = get_db_connection()
                     c = conn.cursor()
@@ -426,9 +436,10 @@ elif menu == "📦 Medicine Inventory":
                     conn.commit()
                     conn.close()
                     
-                    st.success(f"❌ {curr_med['name']} deleted!")
+                    st.success(f"❌ {curr_med['name']} deleted from database!")
                     st.rerun()
 
+    # Add Medicine Controls
     with tab3:
         with st.form("add_med"):
             m_name = st.text_input("Medicine Name").strip()
@@ -436,7 +447,7 @@ elif menu == "📦 Medicine Inventory":
             m_price = st.number_input("Unit Price (PKR)", min_value=0.0, format="%.2f")
             m_qty = st.number_input("Initial Stock Quantity", min_value=1, step=1)
             
-            if st.form_submit_button("Add to Stock", use_container_width=True):
+            if st.form_submit_button("Add to Stock ➕", use_container_width=True):
                 if m_name:
                     try:
                         conn = get_db_connection()
@@ -445,60 +456,85 @@ elif menu == "📦 Medicine Inventory":
                         conn.commit()
                         conn.close()
                         
-                        st.success(f"Added {m_name} to inventory!")
+                        st.success(f"Added {m_name} to stock!")
                         st.rerun()
                     except sqlite3.IntegrityError:
-                        st.error("⚠️ Medicine with this name already exists!")
+                        st.error("⚠️ Yeh medicine name pehle se stock me majood hai!")
                 else:
-                    st.warning("Please specify the medicine name.")
+                    st.warning("Medicine ka naam likhein.")
 
-# ==========================================
-# 4. SALES REPORTS (ADMIN ONLY)
-# ==========================================
+# =========================================================
+# MODULE 4: SALES REPORTS & REVENUE LEDGER
+# =========================================================
 elif menu == "📊 Sales Reports":
-    st.title("📊 Sales Reports & History")
+    st.title("📊 Sales Reports & Revenue Analytics")
     
     conn = get_db_connection()
-    df_sales = pd.read_sql_query("""
-        SELECT bill_id AS 'Bill ID', customer_name AS 'Customer', medicine_name AS 'Medicine', 
-               quantity AS 'Qty', unit_price AS 'Unit Price', total_price AS 'Item Total',
-               subtotal AS 'Subtotal', discount_pct AS 'Disc %', tax_pct AS 'Tax %', 
-               grand_total AS 'Net Total (PKR)', date AS 'Date & Time' 
-        FROM sales ORDER BY id DESC
-    """, conn)
+    try:
+        df_sales = pd.read_sql_query("SELECT * FROM sales ORDER BY id DESC", conn)
+    except Exception:
+        df_sales = pd.DataFrame()
     conn.close()
     
     if not df_sales.empty:
-        distinct_bills = df_sales['Bill ID'].nunique()
-        total_revenue = df_sales.groupby('Bill ID')['Net Total (PKR)'].first().sum()
+        # Schema Column Guard Check
+        for col in ['bill_id', 'customer_name', 'subtotal', 'discount_pct', 'tax_pct', 'grand_total']:
+            if col not in df_sales.columns:
+                df_sales[col] = 0.0 if 'pct' in col or 'total' in col or 'sub' in col else "N/A"
+        
+        # Fill NA defaults for Legacy Records
+        df_sales['bill_id'] = df_sales['bill_id'].fillna("LEGACY-BILL")
+        df_sales['grand_total'] = df_sales['grand_total'].fillna(df_sales['total_price'])
+
+        distinct_bills = df_sales['bill_id'].nunique()
+        total_revenue = df_sales.groupby('bill_id')['grand_total'].first().sum()
         
         c1, c2 = st.columns(2)
         c1.metric("Total Bills Generated", distinct_bills)
-        c2.metric("Total Overall Revenue", f"PKR {total_revenue:.2f}")
+        c2.metric("Total Revenue Generated", f"PKR {total_revenue:.2f}")
         
         st.divider()
-        st.subheader("Detailed Sales Ledger")
-        st.dataframe(df_sales, use_container_width=True)
+        st.subheader("Detailed Sales Ledger Table")
+        
+        display_df = df_sales[[
+            'bill_id', 'customer_name', 'medicine_name', 'quantity', 
+            'unit_price', 'total_price', 'subtotal', 'discount_pct', 
+            'tax_pct', 'grand_total', 'date'
+        ]].rename(columns={
+            'bill_id': 'Bill ID',
+            'customer_name': 'Customer',
+            'medicine_name': 'Medicine',
+            'quantity': 'Qty',
+            'unit_price': 'Unit Price',
+            'total_price': 'Item Total',
+            'subtotal': 'Subtotal',
+            'discount_pct': 'Disc %',
+            'tax_pct': 'Tax %',
+            'grand_total': 'Net Total (PKR)',
+            'date': 'Date & Time'
+        })
+        
+        st.dataframe(display_df, use_container_width=True)
     else:
-        st.info("No sales records registered yet.")
+        st.info("Abhi tak koi sales record register nahi huwe hain.")
 
-# ==========================================
-# 5. ADMIN SETTINGS (ADMIN ONLY)
-# ==========================================
+# =========================================================
+# MODULE 5: ADMIN SETTINGS
+# =========================================================
 elif menu == "⚙️ Admin Settings":
-    st.title("⚙️ Admin Settings")
-    st.subheader("🔑 Change Password")
+    st.title("⚙️ Admin Settings & Security")
+    st.subheader("🔑 Change Admin Password")
     
     with st.form("change_pass_form"):
         old_pass = st.text_input("Current Password", type="password").strip()
         new_pass = st.text_input("New Password", type="password").strip()
         confirm_pass = st.text_input("Confirm New Password", type="password").strip()
         
-        if st.form_submit_button("Update Password", use_container_width=True):
+        if st.form_submit_button("Update Password 💾", use_container_width=True):
             if new_pass != confirm_pass:
-                st.error("❌ New passwords do not match!")
+                st.error("❌ New passwords match nahi kar rahe!")
             elif len(new_pass) < 4:
-                st.warning("⚠️ Password must be at least 4 characters long.")
+                st.warning("⚠️ Naya password kam se kam 4 characters ka hona chahiye.")
             else:
                 conn = get_db_connection()
                 c = conn.cursor()
@@ -509,7 +545,7 @@ elif menu == "⚙️ Admin Settings":
                     c.execute("UPDATE admins SET password = ? WHERE username = 'admin'", (new_pass,))
                     conn.commit()
                     conn.close()
-                    st.success("✅ Password successfully updated!")
+                    st.success("✅ Admin password updated successfully!")
                 else:
                     conn.close()
-                    st.error("❌ Current password is incorrect!")
+                    st.error("❌ Purana password galat hai!")
