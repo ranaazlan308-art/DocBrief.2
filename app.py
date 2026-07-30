@@ -26,7 +26,7 @@ def get_db_connection():
     return conn
 
 def init_db():
-    """Initialize DB and perform safe migrations"""
+    """Initialize DB and perform bulletproof migrations"""
     conn = get_db_connection()
     c = conn.cursor()
     
@@ -68,11 +68,11 @@ def init_db():
         )
     ''')
 
-    # Migration Check
+    # Migration Check: Guarantee all columns exist in `sales` table
     c.execute("PRAGMA table_info(sales)")
     existing_cols = [col[1] for col in c.fetchall()]
     
-    cols_to_add = {
+    required_cols = {
         'bill_id': "TEXT DEFAULT 'INV-001'",
         'customer_name': "TEXT DEFAULT 'Walk-in'",
         'subtotal': "REAL DEFAULT 0.0",
@@ -81,10 +81,10 @@ def init_db():
         'grand_total': "REAL DEFAULT 0.0"
     }
 
-    for col, col_type in cols_to_add.items():
-        if col not in existing_cols:
+    for col_name, col_type in required_cols.items():
+        if col_name not in existing_cols:
             try:
-                c.execute(f"ALTER TABLE sales ADD COLUMN {col} {col_type}")
+                c.execute(f"ALTER TABLE sales ADD COLUMN {col_name} {col_type}")
             except sqlite3.OperationalError:
                 pass
 
@@ -105,7 +105,7 @@ if 'cart' not in st.session_state:
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# --- ULTRA-ROBUST PDF INVOICE GENERATOR (NO-CRASH CANVAS ENGINE) ---
+# --- ULTRA-ROBUST PDF INVOICE GENERATOR ---
 def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discount_pct, tax_pct, grand_total, bill_date):
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
