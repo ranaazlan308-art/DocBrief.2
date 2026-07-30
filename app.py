@@ -5,87 +5,113 @@ import urllib.parse
 from datetime import datetime, timedelta
 
 # ---------------------------------------------------------
-# 1. PAGE CONFIGURATION & ULTRA-CLEAR HIGH CONTRAST STYLING
+# 1. PAGE CONFIGURATION & ULTRA-HIGH CONTRAST DARK THEME
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="A Pharma - Ultra Clear POS System",
+    page_title="A Pharma - Dark POS System",
     page_icon="💊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Ultra-Clear, Bold High-Contrast CSS
+# High-Contrast Modern Dark Theme CSS
 st.markdown("""
     <style>
-        /* Base Background & High Contrast Text */
+        /* Base Dark Background & Text Color */
         .stApp {
-            background-color: #f0f2f5;
-            color: #0f172a;
+            background-color: #090d16 !important;
+            color: #f8fafc !important;
         }
 
-        /* Bold Clear Main Headers */
+        /* Sidebar Dark Styling */
+        [data-testid="stSidebar"] {
+            background-color: #0f172a !important;
+            border-right: 2px solid #1e293b;
+        }
+
+        /* Bold Clear Main Headers with Cyan Accent */
         .main-header {
             font-size: 32px;
             font-weight: 900;
-            color: #0d47a1;
+            color: #00f2fe;
             padding: 10px 0px;
-            border-bottom: 3px solid #1e88e5;
+            border-bottom: 3px solid #00f2fe;
             margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
         }
 
-        /* High Visibility KPI Cards */
+        /* High Contrast Dark Cards */
         .kpi-card {
-            background: #ffffff;
+            background: #111827;
             padding: 20px;
             border-radius: 14px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            border: 2px solid #cbd5e1;
-            border-left: 8px solid #0d47a1;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            border: 2px solid #334155;
+            border-left: 8px solid #00f2fe;
             margin-bottom: 15px;
         }
-        .kpi-title { font-size: 14px; color: #475569; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; }
-        .kpi-value { font-size: 28px; font-weight: 900; color: #0f172a; margin-top: 5px; }
+        .kpi-title { font-size: 14px; color: #94a3b8; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; }
+        .kpi-value { font-size: 28px; font-weight: 900; color: #00f2fe; margin-top: 5px; }
 
-        /* Highly Visible Stock Badges */
-        .badge-success { background-color: #10b981; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; }
-        .badge-warning { background-color: #f59e0b; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; }
-        .badge-danger { background-color: #ef4444; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; }
+        /* Highly Visible Stock Badges on Dark BG */
+        .badge-success { background-color: #059669; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; border: 1px solid #10b981; }
+        .badge-warning { background-color: #d97706; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; border: 1px solid #f59e0b; }
+        .badge-danger { background-color: #dc2626; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; border: 1px solid #ef4444; }
 
-        /* Prominent JazzCash Payment Box */
+        /* Prominent Glowing JazzCash Payment Box */
         .jazzcash-card {
-            background: #ffffff;
-            border: 3px solid #e60000;
+            background: #111827;
+            border: 3px solid #ff0055;
             border-radius: 14px;
             padding: 15px;
             text-align: center;
-            box-shadow: 0 4px 15px rgba(230, 0, 0, 0.15);
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.3);
             margin-top: 15px;
         }
         .jazzcash-header {
-            background: linear-gradient(135deg, #ff8000 0%, #e60000 100%);
+            background: linear-gradient(135deg, #ff8000 0%, #ff0055 100%);
             color: #ffffff;
             font-weight: 900;
             font-size: 16px;
             padding: 8px;
             border-radius: 8px;
             margin-bottom: 12px;
+            letter-spacing: 1px;
         }
 
-        /* Large Clear Form Inputs & Selectboxes */
+        /* Large Clear Dark Input Boxes & Selectboxes */
         .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
-            border: 2px solid #94a3b8 !important;
+            background-color: #1e293b !important;
+            border: 2px solid #475569 !important;
             border-radius: 8px !important;
             font-weight: 700 !important;
             font-size: 15px !important;
-            color: #0f172a !important;
+            color: #ffffff !important;
         }
         
-        /* High Contrast Primary Action Buttons */
+        /* High Contrast Buttons */
         .stButton>button {
             border-radius: 8px !important;
             font-weight: 800 !important;
             font-size: 15px !important;
             padding: 10px 20px !important;
+            border: 1px solid #38bdf8 !important;
+        }
+
+        /* Tab Highlighting */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            background-color: #1e293b;
+            border-radius: 8px 8px 0 0;
+            color: #94a3b8;
+            font-weight: 800;
+            padding: 10px 20px;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #00f2fe !important;
+            color: #090d16 !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -159,10 +185,10 @@ init_db()
 def get_jazzcash_qr_url(amount, bill_id, till_id="00012345"):
     payload = f"JazzCash Merchant POS|TillID:{till_id}|Bill:{bill_id}|Amount:{amount:.2f}|Currency:PKR"
     encoded_payload = urllib.parse.quote(payload)
-    return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_payload}&color=e60000"
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_payload}&color=ff0055"
 
 # ---------------------------------------------------------
-# 3. THERMAL RECEIPT ENGINE
+# 3. THERMAL RECEIPT ENGINE (CLEAR WHITE RECEIPT FOR PRINT)
 # ---------------------------------------------------------
 def generate_receipt_html(bill_id):
     conn = get_connection()
@@ -170,7 +196,7 @@ def generate_receipt_html(bill_id):
     conn.close()
     
     if df.empty:
-        return "<p style='color:red; font-size:16px; font-weight:bold;'>Bill Record Not Found!</p>"
+        return "<p style='color:#ff5252; font-size:16px; font-weight:bold;'>Bill Record Not Found!</p>"
 
     row0 = df.iloc[0]
     cust_name = row0['customer_name']
@@ -214,13 +240,15 @@ def generate_receipt_html(bill_id):
                 margin: 0 auto;
                 background-color: #fff;
                 font-weight: 600;
+                padding: 10px;
+                border-radius: 8px;
             }}
             .text-center {{ text-align: center; }}
             .text-right {{ text-align: right; }}
             .line {{ border-bottom: 2px dashed #000; margin: 8px 0; }}
             table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
             .btn-print {{
-                background-color: #0d47a1;
+                background-color: #ff0055;
                 color: #ffffff;
                 padding: 10px 14px;
                 border: none;
@@ -305,7 +333,7 @@ def login(username, password):
         st.error("❌ Invalid Username or Password!")
 
 if not st.session_state.authenticated:
-    st.markdown("<br><h1 style='text-align: center; color: #0d47a1; font-weight:900;'>💊 A PHARMA LOGIN TERMINAL</h1>", unsafe_allow_html=True)
+    st.markdown("<br><h1 style='text-align: center; color: #00f2fe; font-weight:900; text-shadow: 0 0 10px rgba(0,242,254,0.4);'>💊 A PHARMA LOGIN TERMINAL</h1>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c2:
         st.info("🔑 **Default Access Logins:**\n- **Admin:** `admin` / `admin123`\n- **Staff:** `staff1` / `staff123`")
@@ -318,9 +346,9 @@ if not st.session_state.authenticated:
 # ---------------------------------------------------------
 # 5. SIDEBAR NAVIGATION
 # ---------------------------------------------------------
-st.sidebar.markdown("# 💊 **A PHARMA POS**")
-st.sidebar.markdown(f"👤 **User:** `{st.session_state.username.upper()}`")
-st.sidebar.markdown(f"🔰 **Role:** `{st.session_state.role.upper()}`")
+st.sidebar.markdown("<h2 style='color:#00f2fe;'>💊 A PHARMA POS</h2>", unsafe_allow_html=True)
+st.sidebar.markdown(f"👤 **User:** <span style='color:#00f2fe; font-weight:bold;'>{st.session_state.username.upper()}</span>", unsafe_allow_html=True)
+st.sidebar.markdown(f"🔰 **Role:** <span style='color:#ff0055; font-weight:bold;'>{st.session_state.role.upper()}</span>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 if st.sidebar.button("🔄 Refresh Data", use_container_width=True):
@@ -364,10 +392,10 @@ if st.session_state.role == "staff":
                 # Clear Visual Info Card
                 badge_html = f"<span class='badge-success'>{available_stock} Units Available</span>" if available_stock > 10 else f"<span class='badge-warning'>Low Stock: {available_stock} Left</span>"
                 st.markdown(f"""
-                <div class='kpi-card' style='border-left-color: #10b981;'>
-                    <div style='font-size:20px; font-weight:800; color:#0d47a1;'>Unit Price: Rs. {med_info['price']:,.2f}</div>
+                <div class='kpi-card' style='border-left-color: #00f2fe;'>
+                    <div style='font-size:22px; font-weight:800; color:#00f2fe;'>Unit Price: Rs. {med_info['price']:,.2f}</div>
                     <div style='margin: 8px 0;'><b>Stock Status:</b> {badge_html}</div>
-                    <div style='color:#475569; font-size:13px;'><b>Batch No:</b> {med_info['batch_no']} | <b>Expiry:</b> {med_info['expiry_date']}</div>
+                    <div style='color:#94a3b8; font-size:13px;'><b>Batch No:</b> {med_info['batch_no']} | <b>Expiry:</b> {med_info['expiry_date']}</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -410,9 +438,9 @@ if st.session_state.role == "staff":
                 tax_val = (subtotal - disc_val) * (tax_pct / 100.0)
                 grand_total = (subtotal - disc_val) + tax_val
 
-                st.markdown(f"<h2 style='color:#0d47a1; font-weight:900;'>Grand Total: Rs. {grand_total:,.2f}</h2>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='color:#00e676; font-weight:900; text-shadow: 0 0 10px rgba(0,230,118,0.3);'>Grand Total: Rs. {grand_total:,.2f}</h2>", unsafe_allow_html=True)
 
-                # HIGH VISIBILITY JAZZCASH INTEGRATION
+                # HIGH VISIBILITY DARK JAZZCASH INTEGRATION
                 if pay_method == "JazzCash":
                     temp_bill_id = f"AP-{datetime.now().strftime('%M%S')}"
                     qr_url = get_jazzcash_qr_url(grand_total, temp_bill_id)
@@ -420,7 +448,7 @@ if st.session_state.role == "staff":
                     st.markdown(f"""
                     <div class='jazzcash-card'>
                         <div class='jazzcash-header'>🔴 JAZZCASH QR PAYMENT</div>
-                        <div style='color:#0f172a; font-weight:800; font-size:14px; margin-bottom:8px;'>Scan via JazzCash App to Pay</div>
+                        <div style='color:#f8fafc; font-weight:800; font-size:14px; margin-bottom:8px;'>Scan via JazzCash App to Pay</div>
                     </div>
                     """, unsafe_allow_html=True)
                     st.image(qr_url, caption=f"Scan & Pay Exact Amount: Rs. {grand_total:,.2f}", width=220)
@@ -523,16 +551,16 @@ elif st.session_state.role == "admin":
             """, unsafe_allow_html=True)
             
             m2.markdown(f"""
-            <div class='kpi-card' style='border-left-color: #10b981;'>
+            <div class='kpi-card' style='border-left-color: #00e676;'>
                 <div class='kpi-title'>Total Quantity Sold</div>
-                <div class='kpi-value'>{int(total_items):,} Units</div>
+                <div class='kpi-value' style='color:#00e676;'>{int(total_items):,} Units</div>
             </div>
             """, unsafe_allow_html=True)
 
             m3.markdown(f"""
-            <div class='kpi-card' style='border-left-color: #f59e0b;'>
+            <div class='kpi-card' style='border-left-color: #ff0055;'>
                 <div class='kpi-title'>Completed Transactions</div>
-                <div class='kpi-value'>{total_tx:,} Bills</div>
+                <div class='kpi-value' style='color:#ff0055;'>{total_tx:,} Bills</div>
             </div>
             """, unsafe_allow_html=True)
 
