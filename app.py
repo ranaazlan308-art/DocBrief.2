@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 import io
 
-# ReportLab imports for PDF generation
+# ReportLab Imports for Professional PDF Invoices
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -17,63 +17,72 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- DATABASE SETUP & MIGRATIONS ---
-conn = sqlite3.connect('pharmacy.db', check_same_thread=False)
-c = conn.cursor()
+# --- DATABASE HELPER FUNCTIONS ---
+DB_NAME = "pharmacy.db"
 
-# Medicines Table
-c.execute('''
-    CREATE TABLE IF NOT EXISTS medicines (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE,
-        category TEXT,
-        price REAL,
-        stock INTEGER
-    )
-''')
+def get_db_connection():
+    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# Sales Table
-c.execute('''
-    CREATE TABLE IF NOT EXISTS sales (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        bill_id TEXT,
-        customer_name TEXT,
-        medicine_name TEXT,
-        quantity INTEGER,
-        unit_price REAL,
-        total_price REAL,
-        subtotal REAL,
-        discount_pct REAL,
-        tax_pct REAL,
-        grand_total REAL,
-        date TEXT
-    )
-''')
+def init_db():
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Medicines Table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS medicines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            category TEXT,
+            price REAL,
+            stock INTEGER
+        )
+    ''')
 
-# Admin Credentials Table
-c.execute('''
-    CREATE TABLE IF NOT EXISTS admins (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password TEXT
-    )
-''')
+    # Sales Table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bill_id TEXT,
+            customer_name TEXT,
+            medicine_name TEXT,
+            quantity INTEGER,
+            unit_price REAL,
+            total_price REAL,
+            subtotal REAL,
+            discount_pct REAL,
+            tax_pct REAL,
+            grand_total REAL,
+            date TEXT
+        )
+    ''')
 
-# Default Admin Setup (admin / admin123)
-c.execute("SELECT * FROM admins WHERE username = 'admin'")
-if not c.fetchone():
-    c.execute("INSERT INTO admins (username, password) VALUES (?, ?)", ('admin', 'admin123'))
+    # Admin Credentials Table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+        )
+    ''')
+
+    # Safe Schema Alterations (if upgrading from older database version)
+    existing_columns = [col[1] for col in c.execute("PRAGMA table_info(sales)").fetchall()]
+    for col_name in ['subtotal', 'discount_pct', 'tax_pct', 'grand_total']:
+        if col_name not in existing_columns:
+            c.execute(f"ALTER TABLE sales ADD COLUMN {col_name} REAL DEFAULT 0.0")
+
+    # Default Admin Setup (username: admin | password: admin123)
+    c.execute("SELECT * FROM admins WHERE username = 'admin'")
+    if not c.fetchone():
+        c.execute("INSERT INTO admins (username, password) VALUES (?, ?)", ('admin', 'admin123'))
+    
     conn.commit()
+    conn.close()
 
-# Ensure all sales columns exist for backward compatibility
-try:
-    c.execute("ALTER TABLE sales ADD COLUMN subtotal REAL")
-    c.execute("ALTER TABLE sales ADD COLUMN discount_pct REAL")
-    c.execute("ALTER TABLE sales ADD COLUMN tax_pct REAL")
-    c.execute("ALTER TABLE sales ADD COLUMN grand_total REAL")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass
+# Database Initializer Call
+init_db()
 
 # --- SESSION STATE INITIALIZATION ---
 if 'cart' not in st.session_state:
@@ -164,7 +173,7 @@ if st.session_state['logged_in']:
 else:
     st.sidebar.info("👤 Staff Mode (Limited Access)")
 
-# Role-Based Dynamic Navigation
+# Role-Based Navigation Options
 nav_options = ["🧾 Multi-Item Billing Counter"]
 if st.session_state['logged_in']:
     nav_options.extend(["📦 Medicine Inventory", "📊 Sales Reports", "⚙️ Admin Settings"])
@@ -179,14 +188,16 @@ menu = st.sidebar.radio("Navigation Menu", nav_options)
 if menu == "🧾 Multi-Item Billing Counter":
     st.title("🧾 Multi-Item Billing Counter")
     
+    conn = get_db_connection()
     med_df = pd.read_sql_query("SELECT * FROM medicines WHERE stock > 0", conn)
+    conn.close()
     
     if med_df.empty:
         st.warning("⚠️ Pehle 'Medicine Inventory' section me (Admin login ke zariye) medicines add karein!")
     else:
         col_left, col_right = st.columns([1.2, 1.8])
         
-        # Left Side: Cart Items Selection
+        # Left Column: Selection
         with col_left:
             st.subheader("➕ Add Items to Cart")
             customer_name = st.text_input("Customer Name", value="Walk-in Customer")
@@ -217,7 +228,7 @@ if menu == "🧾 Multi-Item Billing Counter":
             else:
                 st.error("⚠️ Stock limit reached for this item in cart!")
 
-        # Right Side: Invoice Summary & Calculations
+        # Right Column: Cart Breakdown
         with col_right:
             st.subheader("🛒 Current Cart / Invoice Breakdown")
             
@@ -234,20 +245,17 @@ if menu == "🧾 Multi-Item Billing Counter":
                 
                 subtotal = cart_df['total'].sum()
                 
-                # Discount & Tax Inputs
                 d_col, t_col = st.columns(2)
                 with d_col:
                     discount_pct = st.number_input("Overall Discount (%)", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
                 with t_col:
                     tax_pct = st.number_input("GST / Sales Tax (%)", min_value=0.0, max_value=50.0, value=17.0, step=0.5)
                 
-                # Calculations
                 discount_val = subtotal * (discount_pct / 100)
                 taxable_subtotal = subtotal - discount_val
                 tax_val = taxable_subtotal * (tax_pct / 100)
                 grand_total = taxable_subtotal + tax_val
                 
-                # Live Metrics Display
                 st.divider()
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Subtotal", f"PKR {subtotal:.2f}")
@@ -268,7 +276,9 @@ if menu == "🧾 Multi-Item Billing Counter":
                         bill_id = f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         today_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
-                        # Process Sales & Inventory Update
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        
                         for item in st.session_state['cart']:
                             c.execute("UPDATE medicines SET stock = stock - ? WHERE name = ?", (item['qty'], item['medicine']))
                             c.execute('''
@@ -277,12 +287,12 @@ if menu == "🧾 Multi-Item Billing Counter":
                             ''', (bill_id, customer_name, item['medicine'], item['qty'], item['unit_price'], item['total'], subtotal, discount_pct, tax_pct, grand_total, today_date))
                         
                         conn.commit()
+                        conn.close()
                         
-                        # Save Last Checkout Payload for PDF Generation
                         st.session_state['last_checkout'] = {
                             'bill_id': bill_id,
                             'customer': customer_name,
-                            'cart': st.session_state['cart'],
+                            'cart': list(st.session_state['cart']),
                             'subtotal': subtotal,
                             'discount_pct': discount_pct,
                             'tax_pct': tax_pct,
@@ -294,7 +304,7 @@ if menu == "🧾 Multi-Item Billing Counter":
                         st.success(f"✅ Invoice #{bill_id} generated & saved successfully!")
                         st.rerun()
 
-            # PDF Receipt Ready Section
+            # PDF Download Section
             if 'last_checkout' in st.session_state:
                 st.divider()
                 lc = st.session_state['last_checkout']
@@ -326,8 +336,13 @@ elif menu == "🔑 Admin Login":
         u_pass = st.text_input("Password", type="password").strip()
         
         if st.form_submit_button("Login 🚀", use_container_width=True):
+            conn = get_db_connection()
+            c = conn.cursor()
             c.execute("SELECT * FROM admins WHERE username = ? AND password = ?", (u_name, u_pass))
-            if c.fetchone():
+            row = c.fetchone()
+            conn.close()
+            
+            if row:
                 st.session_state['logged_in'] = True
                 st.success("✅ Welcome Admin! You now have full access.")
                 st.rerun()
@@ -335,14 +350,18 @@ elif menu == "🔑 Admin Login":
                 st.error("❌ Invalid Username or Password!")
 
 # ==========================================
-# 3. MEDICINE INVENTORY (ADMIN RESTRICTED)
+# 3. MEDICINE INVENTORY (WITH UPDATE/DELETE)
 # ==========================================
 elif menu == "📦 Medicine Inventory":
     st.title("📦 Medicine Inventory Management")
-    tab1, tab2 = st.tabs(["📋 Current Stock List", "➕ Add New Medicine"])
+    tab1, tab2, tab3 = st.tabs(["📋 Current Stock List", "✏️ Edit / Update Stock", "➕ Add New Medicine"])
     
+    # --- TAB 1: LIST STOCK ---
     with tab1:
+        conn = get_db_connection()
         df_inv = pd.read_sql_query("SELECT id AS 'ID', name AS 'Medicine', category AS 'Category', price AS 'Price (PKR)', stock AS 'Stock Qty' FROM medicines", conn)
+        conn.close()
+        
         if not df_inv.empty:
             st.dataframe(df_inv, use_container_width=True)
             low_stock = df_inv[df_inv['Stock Qty'] <= 10]
@@ -351,19 +370,78 @@ elif menu == "📦 Medicine Inventory":
                 st.dataframe(low_stock, use_container_width=True)
         else:
             st.info("Inventory khali hai. Nayi medicine add karein.")
-            
+
+    # --- TAB 2: EDIT / UPDATE STOCK ---
     with tab2:
+        st.subheader("✏️ Existing Medicine Details Update Karein")
+        
+        conn = get_db_connection()
+        med_list_df = pd.read_sql_query("SELECT * FROM medicines", conn)
+        conn.close()
+        
+        if med_list_df.empty:
+            st.info("Update karne ke liye koi medicine majood nahi hai.")
+        else:
+            med_to_edit = st.selectbox("Select Medicine to Modify", med_list_df['name'].tolist())
+            curr_med = med_list_df[med_list_df['name'] == med_to_edit].iloc[0]
+            
+            col_u1, col_u2 = st.columns(2)
+            
+            with col_u1:
+                with st.form("update_med_form"):
+                    st.write(f"Editing: **{curr_med['name']}**")
+                    categories = ["Tablet", "Syrup", "Injection", "Capsule", "Ointment", "Other"]
+                    cat_index = categories.index(curr_med['category']) if curr_med['category'] in categories else 0
+                    
+                    new_category = st.selectbox("Category", categories, index=cat_index)
+                    new_price = st.number_input("Unit Price (PKR)", min_value=0.0, value=float(curr_med['price']), format="%.2f")
+                    new_stock = st.number_input("Stock Quantity", min_value=0, value=int(curr_med['stock']), step=1)
+                    
+                    if st.form_submit_button("Save / Update Stock 💾", type="primary", use_container_width=True):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute('''
+                            UPDATE medicines 
+                            SET category = ?, price = ?, stock = ? 
+                            WHERE id = ?
+                        ''', (new_category, new_price, new_stock, int(curr_med['id'])))
+                        conn.commit()
+                        conn.close()
+                        
+                        st.success(f"✅ {curr_med['name']} update ho gaya!")
+                        st.rerun()
+
+            with col_u2:
+                st.write("---")
+                st.warning("⚠️ **Delete Medicine**")
+                st.write(f"Kya aap **{curr_med['name']}** ko inventory se delete karna chahte hain?")
+                if st.button(f"Delete {curr_med['name']} 🗑️", use_container_width=True):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("DELETE FROM medicines WHERE id = ?", (int(curr_med['id']),))
+                    conn.commit()
+                    conn.close()
+                    
+                    st.success(f"❌ {curr_med['name']} deleted from database!")
+                    st.rerun()
+
+    # --- TAB 3: ADD NEW MEDICINE ---
+    with tab3:
         with st.form("add_med"):
             m_name = st.text_input("Medicine Name").strip()
             m_cat = st.selectbox("Category", ["Tablet", "Syrup", "Injection", "Capsule", "Ointment", "Other"])
             m_price = st.number_input("Unit Price (PKR)", min_value=0.0, format="%.2f")
             m_qty = st.number_input("Initial Stock Quantity", min_value=1, step=1)
             
-            if st.form_submit_button("Add to Stock"):
+            if st.form_submit_button("Add to Stock", use_container_width=True):
                 if m_name:
                     try:
+                        conn = get_db_connection()
+                        c = conn.cursor()
                         c.execute("INSERT INTO medicines (name, category, price, stock) VALUES (?, ?, ?, ?)", (m_name, m_cat, m_price, m_qty))
                         conn.commit()
+                        conn.close()
+                        
                         st.success(f"Added {m_name} to stock!")
                         st.rerun()
                     except sqlite3.IntegrityError:
@@ -377,6 +455,7 @@ elif menu == "📦 Medicine Inventory":
 elif menu == "📊 Sales Reports":
     st.title("📊 Sales History & Revenue Reports")
     
+    conn = get_db_connection()
     df_sales = pd.read_sql_query("""
         SELECT bill_id AS 'Bill ID', customer_name AS 'Customer', medicine_name AS 'Medicine', 
                quantity AS 'Qty', unit_price AS 'Unit Price', total_price AS 'Item Total',
@@ -384,9 +463,9 @@ elif menu == "📊 Sales Reports":
                grand_total AS 'Bill Net Total (PKR)', date AS 'Date & Time' 
         FROM sales ORDER BY id DESC
     """, conn)
+    conn.close()
     
     if not df_sales.empty:
-        # High level Summary Metrics
         distinct_bills = df_sales['Bill ID'].nunique()
         total_revenue = df_sales.groupby('Bill ID')['Bill Net Total (PKR)'].first().sum()
         
@@ -412,16 +491,22 @@ elif menu == "⚙️ Admin Settings":
         new_pass = st.text_input("New Password", type="password").strip()
         confirm_pass = st.text_input("Confirm New Password", type="password").strip()
         
-        if st.form_submit_button("Update Password"):
+        if st.form_submit_button("Update Password", use_container_width=True):
             if new_pass != confirm_pass:
                 st.error("❌ Naya password aur confirm password match nahi ho rahe!")
             elif len(new_pass) < 4:
                 st.warning("⚠️ New password kam se kam 4 characters ka hona chahiye.")
             else:
+                conn = get_db_connection()
+                c = conn.cursor()
                 c.execute("SELECT * FROM admins WHERE username = 'admin' AND password = ?", (old_pass,))
-                if c.fetchone():
+                row = c.fetchone()
+                
+                if row:
                     c.execute("UPDATE admins SET password = ? WHERE username = 'admin'", (new_pass,))
                     conn.commit()
+                    conn.close()
                     st.success("✅ Admin password successfully updated!")
                 else:
+                    conn.close()
                     st.error("❌ Purana password galat hai!")
