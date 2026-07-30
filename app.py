@@ -4,11 +4,10 @@ import pandas as pd
 from datetime import datetime
 import io
 
-# ReportLab Imports for PDF Invoices
+# ReportLab Canvas Engine (Zero-Error PDF Builder)
 from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -69,7 +68,7 @@ def init_db():
         )
     ''')
 
-    # Migration Check: Safely add missing columns if using an existing DB
+    # Migration Check
     c.execute("PRAGMA table_info(sales)")
     existing_cols = [col[1] for col in c.fetchall()]
     
@@ -106,71 +105,107 @@ if 'cart' not in st.session_state:
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# --- PDF INVOICE GENERATOR ---
+# --- ULTRA-ROBUST PDF INVOICE GENERATOR (NO-CRASH CANVAS ENGINE) ---
 def generate_multi_item_pdf(bill_id, customer_name, cart_items, subtotal, discount_pct, tax_pct, grand_total, bill_date):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
-    styles = getSampleStyleSheet()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    
+    # Header Section
+    p.setFillColor(colors.HexColor('#1E3A8A'))
+    p.rect(0, height - 80, width, 80, fill=True, stroke=False)
+    
+    p.setFillColor(colors.white)
+    p.setFont("Helvetica-Bold", 20)
+    p.drawCentredString(width / 2.0, height - 35, "PHARMACARE PHARMACY")
+    p.setFont("Helvetica", 10)
+    p.drawCentredString(width / 2.0, height - 55, "Official Sales Tax Invoice & Cash Receipt")
 
-    # Title
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, alignment=1, textColor=colors.HexColor('#1E3A8A'))
-    story.append(Paragraph("<b>PHARMACARE PHARMACY</b>", title_style))
-    story.append(Paragraph("Tax Invoice & Sales Receipt", ParagraphStyle('Sub', parent=styles['Normal'], alignment=1, textColor=colors.gray)))
-    story.append(Spacer(1, 15))
+    # Meta Data Section
+    p.setFillColor(colors.black)
+    p.setFont("Helvetica-Bold", 10)
+    
+    y = height - 110
+    p.drawString(40, y, f"Customer Name: {str(customer_name)}")
+    p.drawString(380, y, f"Invoice No: #{str(bill_id)}")
+    
+    y -= 18
+    p.drawString(40, y, f"Date & Time: {str(bill_date)}")
+    p.drawString(380, y, "Payment Mode: Counter Cash")
 
-    # Meta Info
-    meta_data = [
-        [f"Customer: {customer_name}", f"Date: {bill_date}"],
-        [f"Invoice #: {bill_id}", "Payment: Cash"]
-    ]
-    t_meta = Table(meta_data, colWidths=[250, 250])
-    t_meta.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ]))
-    story.append(t_meta)
-    story.append(Spacer(1, 15))
+    p.setStrokeColor(colors.HexColor('#CBD5E1'))
+    p.setLineWidth(1)
+    p.line(40, y - 10, width - 40, y - 10)
 
-    # Items Table
-    table_data = [["#", "Item Name", "Qty", "Price", "Total"]]
+    # Items Table Header
+    y -= 35
+    p.setFillColor(colors.HexColor('#1E3A8A'))
+    p.rect(40, y - 5, width - 80, 20, fill=True, stroke=False)
+    
+    p.setFillColor(colors.white)
+    p.setFont("Helvetica-Bold", 9)
+    p.drawString(50, y, "#")
+    p.drawString(80, y, "Item Description")
+    p.drawRightString(320, y, "Qty")
+    p.drawRightString(420, y, "Price (PKR)")
+    p.drawRightString(550, y, "Total (PKR)")
+
+    # Table Items List
+    p.setFillColor(colors.black)
+    p.setFont("Helvetica", 9)
+    y -= 20
+    
     for idx, item in enumerate(cart_items, 1):
-        table_data.append([
-            str(idx),
-            str(item['medicine']),
-            str(item['qty']),
-            f"{item['unit_price']:.2f}",
-            f"{item['total']:.2f}"
-        ])
+        if y < 120:  # Multi-page fallback boundary
+            p.showPage()
+            y = height - 50
 
+        p.drawString(50, y, str(idx))
+        p.drawString(80, y, str(item['medicine'])[:35])  # Auto truncation protection
+        p.drawRightString(320, y, str(item['qty']))
+        p.drawRightString(420, y, f"{float(item['unit_price']):.2f}")
+        p.drawRightString(550, y, f"{float(item['total']):.2f}")
+        
+        y -= 15
+        p.setStrokeColor(colors.HexColor('#F1F5F9'))
+        p.line(40, y + 10, width - 40, y + 10)
+
+    # Calculations Summary Block
+    y -= 15
     disc_val = subtotal * (discount_pct / 100)
     taxable_amt = subtotal - disc_val
     tax_val = taxable_amt * (tax_pct / 100)
 
-    table_data.append(["", "", "", "Subtotal:", f"{subtotal:.2f}"])
-    table_data.append(["", "", "", f"Discount ({discount_pct:.1f}%):", f"-{disc_val:.2f}"])
-    table_data.append(["", "", "", f"Tax ({tax_pct:.1f}%):", f"+{tax_val:.2f}"])
-    table_data.append(["", "", "", "Grand Total:", f"PKR {grand_total:.2f}"])
+    p.setFont("Helvetica", 9)
+    p.drawRightString(420, y, "Subtotal:")
+    p.drawRightString(550, y, f"PKR {subtotal:.2f}")
 
-    t_items = Table(table_data, colWidths=[30, 220, 50, 100, 100])
-    t_items.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0,0), (-1,0), 6),
-        ('GRID', (0,0), (-1,-5), 0.5, colors.HexColor('#CBD5E1')),
-        ('FONTNAME', (3,-4), (4,-1), 'Helvetica-Bold'),
-        ('BACKGROUND', (3,-1), (4,-1), colors.HexColor('#E2E8F0')),
-    ]))
-    story.append(t_items)
-    story.append(Spacer(1, 20))
+    y -= 15
+    p.drawRightString(420, y, f"Discount ({discount_pct:.1f}%):")
+    p.drawRightString(550, y, f"- PKR {disc_val:.2f}")
 
-    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=9, alignment=1, textColor=colors.gray)
-    story.append(Paragraph("Thank you for your visit!", footer_style))
+    y -= 15
+    p.drawRightString(420, y, f"Sales Tax / GST ({tax_pct:.1f}%):")
+    p.drawRightString(550, y, f"+ PKR {tax_val:.2f}")
 
-    doc.build(story)
+    # Grand Total Highlighted Box
+    y -= 25
+    p.setFillColor(colors.HexColor('#1E3A8A'))
+    p.rect(340, y - 5, 230, 22, fill=True, stroke=False)
+    
+    p.setFillColor(colors.white)
+    p.setFont("Helvetica-Bold", 11)
+    p.drawRightString(430, y, "Grand Total:")
+    p.drawRightString(550, y, f"PKR {grand_total:.2f}")
+
+    # Receipt Footer
+    p.setFillColor(colors.HexColor('#64748B'))
+    p.setFont("Helvetica-Oblique", 8)
+    p.drawCentredString(width / 2.0, 30, "Thank you for shopping with PharmaCare! Wish you good health.")
+
+    p.showPage()
+    p.save()
+    
     buffer.seek(0)
     return buffer
 
@@ -296,14 +331,18 @@ if menu == "🧾 Billing Counter":
             if 'last_bill' in st.session_state:
                 st.divider()
                 lb = st.session_state['last_bill']
-                pdf = generate_multi_item_pdf(
+                
+                # Dynamic PDF Build
+                pdf_bytes = generate_multi_item_pdf(
                     lb['bill_id'], lb['customer'], lb['cart'], 
                     lb['subtotal'], lb['discount_pct'], lb['tax_pct'], 
                     lb['grand_total'], lb['date']
                 )
+                
+                st.subheader("📄 Printed Bill PDF")
                 st.download_button(
-                    label=f"📥 Download Invoice PDF (#{lb['bill_id']})",
-                    data=pdf,
+                    label=f"📥 Download Printable Invoice PDF (#{lb['bill_id']})",
+                    data=pdf_bytes,
                     file_name=f"Invoice_{lb['bill_id']}.pdf",
                     mime="application/pdf",
                     use_container_width=True
