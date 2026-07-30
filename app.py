@@ -26,7 +26,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. DATABASE MANAGEMENT & AUTO MIGRATION
+# 2. DATABASE MANAGEMENT & SAFE AUTO MIGRATION
 # ---------------------------------------------------------
 def get_connection():
     return sqlite3.connect("pharmacy_multi.db", timeout=20, check_same_thread=False)
@@ -69,18 +69,31 @@ def init_db():
                     sold_by TEXT,
                     timestamp DATETIME)''')
     
-    # Schema Migration Check for updates
+    # Safely Add Missing Columns to Inventory Table
     c.execute("PRAGMA table_info(inventory)")
     inv_cols = [col[1] for col in c.fetchall()]
+    
     if 'batch_no' not in inv_cols:
-        c.execute("ALTER TABLE inventory ADD COLUMN batch_no TEXT DEFAULT 'B-001'")
+        try:
+            c.execute("ALTER TABLE inventory ADD COLUMN batch_no TEXT DEFAULT 'B-001'")
+        except sqlite3.OperationalError:
+            pass
+            
     if 'expiry_date' not in inv_cols:
-        c.execute("ALTER TABLE inventory ADD COLUMN expiry_date DATE DEFAULT '2026-12-31'")
+        try:
+            c.execute("ALTER TABLE inventory ADD COLUMN expiry_date DATE DEFAULT '2026-12-31'")
+        except sqlite3.OperationalError:
+            pass
 
+    # Safely Add Missing Columns to Sales Table
     c.execute("PRAGMA table_info(sales)")
     sales_cols = [col[1] for col in c.fetchall()]
+    
     if 'payment_method' not in sales_cols:
-        c.execute("ALTER TABLE sales ADD COLUMN payment_method TEXT DEFAULT 'Cash'")
+        try:
+            c.execute("ALTER TABLE sales ADD COLUMN payment_method TEXT DEFAULT 'Cash'")
+        except sqlite3.OperationalError:
+            pass
 
     # Default Accounts
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'admin123', 'admin')")
