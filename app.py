@@ -11,7 +11,7 @@ from reportlab.lib import colors
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="PharmaCare POS & Inventory System", 
+    page_title="A.M Pharma POS & Inventory System", 
     page_icon="💊", 
     layout="wide"
 )
