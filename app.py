@@ -47,6 +47,12 @@ def print_receipt_in_background(receipt_data):
             LINE = "=" * WIDTH
             DASH = "-" * WIDTH
 
+            # Pre-formatting string variables to avoid nesting quotes inside f-strings
+            subtotal_str = f"Rs. {receipt_data['subtotal']:.2f}".rjust(18)
+            discount_str = f"-Rs. {receipt_data['discount']:.2f}".rjust(18)
+            tax_str = f"+Rs. {receipt_data['tax']:.2f}".rjust(18)
+            grand_total_str = f"Rs. {receipt_data['grand_total']:.2f}".rjust(15)
+
             # Clean Monospace Receipt Formatting
             text_receipt = f"{LINE}\n"
             text_receipt += f"          A PHARMA          \n"
@@ -67,11 +73,11 @@ def print_receipt_in_background(receipt_data):
                 text_receipt += f"{name} {qty} {total}\n"
 
             text_receipt += f"{DASH}\n"
-            text_receipt += f"Subtotal: {f'Rs. {receipt_data[\"subtotal\"]:.2f}'.rjust(18)}\n"
-            text_receipt += f"Discount: {f'-Rs. {receipt_data[\"discount\"]:.2f}'.rjust(18)}\n"
-            text_receipt += f"Tax     : {f'+Rs. {receipt_data[\"tax\"]:.2f}'.rjust(18)}\n"
+            text_receipt += f"Subtotal: {subtotal_str}\n"
+            text_receipt += f"Discount: {discount_str}\n"
+            text_receipt += f"Tax     : {tax_str}\n"
             text_receipt += f"{DASH}\n"
-            text_receipt += f"GRAND TOTAL: {f'Rs. {receipt_data[\"grand_total\"]:.2f}'.rjust(15)}\n"
+            text_receipt += f"GRAND TOTAL: {grand_total_str}\n"
             text_receipt += f"{LINE}\n"
             text_receipt += f"   Thank You! Get Well Soon!   \n"
             text_receipt += f"{LINE}\n\n\n\n\n"
