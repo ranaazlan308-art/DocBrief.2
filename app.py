@@ -12,11 +12,11 @@ import threading
 # ---------------------------------------------------------
 def print_receipt_in_background(receipt_data):
     """
-    یہ فنکشن بغیر کسی تاخیر کے تھرمل پرنٹر پر بل بھیجتا ہے۔
+    یہ فنکشن بیک گراؤنڈ میں تھرمل پرنٹر کو ڈیٹا بھیجتا ہے۔
     """
     def _print_job():
         try:
-            # 1. ٹیکسٹ فارمیٹڈ بل (80mm/58mm Thermal Printer Optimized)
+            # 80mm / 58mm Thermal Printer Optimized Text Format
             text_receipt = f"""
 ================================
            A PHARMA             
@@ -47,18 +47,15 @@ GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
 ================================
 \n\n\n\n\n"""
 
-            # 2. ٹیمپریری فائل بنائیں
             filename = f"temp_receipt_{receipt_data['bill_id']}.txt"
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(text_receipt)
 
-            # 3. آپریٹنگ سسٹم کی بنیاد پر پرنٹ بھیجیں
             sys_name = platform.system()
             if sys_name == "Windows":
-                # Windows Print Spooler (Direct to Default Printer)
+                # Direct spool print or fallback notepad
                 os.system(f'print /d:PRN "{filename}" 2>NUL || notepad /p "{filename}"')
             elif sys_name in ["Linux", "Darwin"]:
-                # Linux/Mac CUPS printer
                 os.system(f'lp "{filename}"')
 
             time.sleep(2)
@@ -68,7 +65,6 @@ GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
         except Exception as e:
             print(f"Printing Error: {e}")
 
-    # Background Thread پر عملدرآمد
     thread = threading.Thread(target=_print_job)
     thread.daemon = True
     thread.start()
@@ -83,7 +79,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Thermal Receipt Styling & Auto-Print CSS
+# Perfect Thermal Slip CSS
 RECEIPT_CSS = """
 <style>
     .receipt-box {
@@ -147,7 +143,7 @@ st.markdown(RECEIPT_CSS, unsafe_allow_html=True)
 # ---------------------------------------------------------
 def get_connection():
     conn = sqlite3.connect("pharmacy_multi.db", timeout=30, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")  # Prevents database locks
+    conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
 def init_db():
@@ -380,15 +376,13 @@ if st.session_state.role == "staff":
                 }
 
                 st.session_state.last_receipt = receipt_obj
-
-                # تھرمل پرنٹر پر بیک گراؤنڈ پرنٹ کا حکم
                 print_receipt_in_background(receipt_obj)
 
                 st.session_state.cart = []
-                st.success("Sale Complete! Receipt sent to Thermal Printer.")
+                st.success("Sale Complete! Sent to printer.")
                 st.rerun()
 
-        # Thermal Receipt View
+        # Thermal Receipt Output
         if st.session_state.last_receipt:
             r = st.session_state.last_receipt
             items_html = ""
