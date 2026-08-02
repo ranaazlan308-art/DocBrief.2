@@ -91,8 +91,8 @@ def init_db():
                     unit_price REAL,
                     total_price REAL,
                     subtotal REAL DEFAULT 0.0,
-                    discount_pct REAL DEFAULT 0.0,
-                    tax_pct REAL DEFAULT 0.0,
+                    discount_pct REAL DEFAULT 10.0,
+                    tax_pct REAL DEFAULT 3.0,
                     grand_total REAL DEFAULT 0.0,
                     sold_by TEXT,
                     timestamp DATETIME)''')
@@ -181,16 +181,15 @@ if st.session_state.role == "staff":
         cust_name = st.text_input("Customer Name", value="Walk-in Customer")
         
         if not inventory_df.empty:
-            # ✨ FEATURE 1: Category Filter & Quick Search
+            # Category Filter & Search
             filter_col1, filter_col2 = st.columns(2)
-            categories = ["All"] + list(inventory_df['category'].unique())
+            categories = ["All"] + list(inventory_df['category'].dropna().unique())
             
             with filter_col1:
                 selected_cat = st.selectbox("Filter Category", categories)
             with filter_col2:
                 search_query = st.text_input("🔎 Search Medicine", "")
 
-            # Apply Filtering
             filtered_df = inventory_df.copy()
             if selected_cat != "All":
                 filtered_df = filtered_df[filtered_df['category'] == selected_cat]
@@ -229,7 +228,7 @@ if st.session_state.role == "staff":
                 else:
                     st.warning("Selected medicine is out of stock!")
             else:
-                st.warning("No medicines match your search/filter.")
+                st.warning("No medicines match your search criteria.")
         else:
             st.warning("No available inventory found. Please contact Administrator.")
 
@@ -249,16 +248,18 @@ if st.session_state.role == "staff":
         st.subheader("Checkout & Receipt")
         if st.session_state.cart:
             subtotal = sum(item['total'] for item in st.session_state.cart)
-            discount = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=0.0)
-            tax = st.number_input("Tax (%)", min_value=0.0, max_value=100.0, value=0.0)
+            
+            # ✨ Auto 10% Discount and Auto 3% Tax Added (Default Values)
+            discount = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=10.0)
+            tax = st.number_input("Tax (%)", min_value=0.0, max_value=100.0, value=3.0)
 
             discount_amount = subtotal * (discount / 100)
             tax_amount = (subtotal - discount_amount) * (tax / 100)
             grand_total = subtotal - discount_amount + tax_amount
 
             st.markdown(f"**Subtotal:** Rs. {subtotal:.2f}")
-            st.markdown(f"**Discount:** -Rs. {discount_amount:.2f}")
-            st.markdown(f"**Tax:** +Rs. {tax_amount:.2f}")
+            st.markdown(f"**Discount ({discount:.1f}%):** -Rs. {discount_amount:.2f}")
+            st.markdown(f"**Tax ({tax:.1f}%):** +Rs. {tax_amount:.2f}")
             st.markdown(f"### **Grand Total:** Rs. {grand_total:.2f}")
 
             if st.button("✅ Complete Sale & Print Receipt", use_container_width=True):
@@ -296,7 +297,7 @@ if st.session_state.role == "staff":
                 st.success("Sale processed successfully!")
                 st.rerun()
 
-        # Render thermal receipt if available
+        # Thermal receipt layout
         if st.session_state.last_receipt:
             r = st.session_state.last_receipt
             items_html = ""
@@ -343,7 +344,7 @@ if st.session_state.role == "staff":
 elif st.session_state.role == "admin":
     st.title("⚙️ Admin Dashboard - A Pharma")
 
-    # ✨ FEATURE 2: Low Stock Warning Alert
+    # Low Stock Warning Alert
     conn = get_connection()
     low_stock_df = pd.read_sql("SELECT name, stock FROM inventory WHERE stock <= 5", conn)
     conn.close()
@@ -393,7 +394,6 @@ elif st.session_state.role == "admin":
         if not inv_df.empty:
             st.dataframe(inv_df, use_container_width=True)
             
-            # ✨ FEATURE 3: Quick Stock Update
             st.markdown("---")
             st.caption("⚡ Quick Stock Adjuster")
             q_col1, q_col2, q_col3 = st.columns([2, 1, 1])
@@ -432,7 +432,7 @@ elif st.session_state.role == "admin":
             col_m2.metric("Total Transactions", total_bills)
             col_m3.metric("Total Items Sold", items_sold)
 
-            # ✨ FEATURE 4: Download Sales CSV Button
+            # CSV Download Option
             csv_data = sales_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Sales Data as CSV",
@@ -478,13 +478,14 @@ elif st.session_state.role == "admin":
         conn.close()
         st.dataframe(users_df, use_container_width=True)
 
-        # ✨ FEATURE 5: Delete System Users
+        # Remove Users Section
         if len(users_df) > 1:
             st.markdown("---")
             st.caption("🗑️ Delete User Account")
             d_col1, d_col2 = st.columns([2, 1])
             with d_col1:
-                user_to_delete = st.selectbox("Select User to Remove", users_df[users_df['username'] != st.session_state.username]['username'].tolist())
+                other_users = users_df[users_df['username'] != st.session_state.username]['username'].tolist()
+                user_to_delete = st.selectbox("Select User to Remove", other_users)
             with d_col2:
                 st.write("")
                 st.write("")
