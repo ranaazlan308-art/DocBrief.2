@@ -12,11 +12,11 @@ import threading
 # ---------------------------------------------------------
 def print_receipt_in_background(receipt_data):
     """
-    یہ فنکشن بیک گراؤنڈ میں تھرمل پرنٹر کو ڈیٹا بھیجتا ہے۔
+    یہ فنکشن بیک گراؤنڈ میں تھرمل پرنٹر کو صاف ٹیکسٹ بھیجتا ہے۔
     """
     def _print_job():
         try:
-            # 80mm / 58mm Thermal Printer Optimized Text Format
+            # Clean Text Format for Thermal Paper (58mm/80mm)
             text_receipt = f"""
 ================================
            A PHARMA             
@@ -53,7 +53,7 @@ GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
 
             sys_name = platform.system()
             if sys_name == "Windows":
-                # Direct spool print or fallback notepad
+                # Direct spool print
                 os.system(f'print /d:PRN "{filename}" 2>NUL || notepad /p "{filename}"')
             elif sys_name in ["Linux", "Darwin"]:
                 os.system(f'lp "{filename}"')
@@ -71,72 +71,13 @@ GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
 
 
 # ---------------------------------------------------------
-# 1. PAGE CONFIGURATION & STYLING
+# 1. PAGE CONFIGURATION & PRINT STYLING
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="A Pharma - Thermal POS",
     page_icon="💊",
     layout="wide"
 )
-
-# Perfect Thermal Slip CSS
-RECEIPT_CSS = """
-<style>
-    .receipt-box {
-        width: 280px;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 11px;
-        line-height: 1.2;
-        padding: 10px;
-        border: 1px solid #000;
-        background-color: #fff;
-        color: #000;
-        margin: 0 auto;
-    }
-    .receipt-header {
-        text-align: center;
-        margin-bottom: 5px;
-    }
-    .receipt-header h3 {
-        margin: 0;
-        font-size: 16px;
-        font-weight: bold;
-    }
-    .receipt-line {
-        border-bottom: 1px dashed #000;
-        margin: 4px 0;
-    }
-    .receipt-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-    .receipt-table th, .receipt-table td {
-        text-align: left;
-        padding: 1px 0;
-    }
-    .receipt-table .num {
-        text-align: right;
-    }
-    .text-center { text-align: center; }
-
-    @media print {
-        body * {
-            visibility: hidden !important;
-        }
-        #thermal-receipt-container, #thermal-receipt-container * {
-            visibility: visible !important;
-        }
-        #thermal-receipt-container {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            border: none !important;
-        }
-    }
-</style>
-"""
-st.markdown(RECEIPT_CSS, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 2. DATABASE MANAGEMENT
@@ -326,7 +267,6 @@ if st.session_state.role == "staff":
         if st.session_state.cart:
             subtotal = sum(item['total'] for item in st.session_state.cart)
             
-            # Auto 10% Discount & Auto 3% Tax
             discount = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=10.0)
             tax = st.number_input("Tax (%)", min_value=0.0, max_value=100.0, value=3.0)
 
@@ -382,52 +322,51 @@ if st.session_state.role == "staff":
                 st.success("Sale Complete! Sent to printer.")
                 st.rerun()
 
-        # Thermal Receipt Output
+        # ---------------------------------------------------------
+        # CLEAN RECEIPT DISPLAY (No HTML Tags Shown on Screen)
+        # ---------------------------------------------------------
         if st.session_state.last_receipt:
             r = st.session_state.last_receipt
-            items_html = ""
-            for item in r['items']:
-                items_html += f"""
-                <tr>
-                    <td>{item['name']} x{item['qty']}</td>
-                    <td class="num">{item['total']:.2f}</td>
-                </tr>
-                """
-
-            receipt_html = f"""
-            <div id="thermal-receipt-container">
-                <div class="receipt-box">
-                    <div class="receipt-header">
-                        <h3>A PHARMA</h3>
-                        <p>Multi-Counter POS System<br>Bill #: {r['bill_id']}<br>Date: {r['date']}</p>
-                    </div>
-                    <div class="receipt-line"></div>
-                    <p><strong>Cust:</strong> {r['customer']}<br><strong>Cashier:</strong> {r['sold_by']}</p>
-                    <div class="receipt-line"></div>
-                    <table class="receipt-table">
-                        <thead>
-                            <tr><th>Item</th><th class="num">Amount</th></tr>
-                        </thead>
-                        <tbody>
-                            {items_html}
-                        </tbody>
-                    </table>
-                    <div class="receipt-line"></div>
-                    <table class="receipt-table">
-                        <tr><td>Subtotal</td><td class="num">{r['subtotal']:.2f}</td></tr>
-                        <tr><td>Discount</td><td class="num">-{r['discount']:.2f}</td></tr>
-                        <tr><td>Tax</td><td class="num">+{r['tax']:.2f}</td></tr>
-                        <tr><td><strong>Grand Total</strong></td><td class="num"><strong>Rs. {r['grand_total']:.2f}</strong></td></tr>
-                    </table>
-                    <div class="receipt-line"></div>
-                    <p class="text-center">Thank you! Get Well Soon!</p>
-                </div>
-            </div>
-            """
-            st.markdown(receipt_html, unsafe_allow_html=True)
             
-            if st.button("🖨️ Browser Print Dialog", use_container_width=True):
-                st.components.v1.html("<script>window.print();</script>", height=0)
+            st.markdown("---")
+            st.subheader("🧾 Thermal Receipt Preview")
+
+            # Clean UI Box for Screen
+            receipt_container = st.container(border=True)
+            with receipt_container:
+                st.markdown("<h3 style='text-align: center; margin:0;'>A PHARMA</h3>", unsafe_allow_html=True)
+                st.markdown("<p style='text-align: center; font-size:12px; margin:0;'>Multi-Counter POS System</p>", unsafe_allow_html=True)
+                st.caption(f"**Bill #:** {r['bill_id']} | **Date:** {r['date']}")
+                st.write(f"**Customer:** {r['customer']} | **Cashier:** {r['sold_by']}")
+                st.markdown("---")
+
+                # Items Table
+                item_rows = []
+                for item in r['items']:
+                    item_rows.append({
+                        "Item": f"{item['name']} (x{item['qty']})",
+                        "Amount": f"Rs. {item['total']:.2f}"
+                    })
+                st.table(pd.DataFrame(item_rows))
+
+                st.markdown("---")
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    st.write("Subtotal:")
+                    st.write("Discount:")
+                    st.write("Tax:")
+                    st.markdown("**Grand Total:**")
+                with col_r2:
+                    st.write(f"Rs. {r['subtotal']:.2f}")
+                    st.write(f"-Rs. {r['discount']:.2f}")
+                    st.write(f"+Rs. {r['tax']:.2f}")
+                    st.markdown(f"**Rs. {r['grand_total']:.2f}**")
+                
+                st.markdown("<p style='text-align: center; margin-top:15px; font-size:12px;'><i>Thank you! Get Well Soon!</i></p>", unsafe_allow_html=True)
+
+            if st.button("🖨️ Reprint to Thermal Printer", use_container_width=True):
+                print_receipt_in_background(r)
+                st.success("Receipt sent to thermal printer!")
 
 # ==================== ADMIN DASHBOARD ====================
 elif st.session_state.role == "admin":
