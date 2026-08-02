@@ -1,146 +1,87 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-import urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime
+import time
 
 # ---------------------------------------------------------
-# 1. PAGE CONFIGURATION & ULTRA-HIGH CONTRAST DARK THEME
+# 1. PAGE CONFIGURATION & STYLING
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="A Pharma - Dark POS System",
+    page_title="A Pharma - Multi-Counter POS",
     page_icon="💊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# High-Contrast Modern Dark Theme CSS
-st.markdown("""
-    <style>
-        /* Base Dark Background & Text Color */
-        .stApp {
-            background-color: #090d16 !important;
-            color: #f8fafc !important;
-        }
-
-        /* Sidebar Dark Styling */
-        [data-testid="stSidebar"] {
-            background-color: #0f172a !important;
-            border-right: 2px solid #1e293b;
-        }
-
-        /* Bold Clear Main Headers with Cyan Accent */
-        .main-header {
-            font-size: 32px;
-            font-weight: 900;
-            color: #00f2fe;
-            padding: 10px 0px;
-            border-bottom: 3px solid #00f2fe;
-            margin-bottom: 20px;
-            text-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
-        }
-
-        /* High Contrast Dark Cards */
-        .kpi-card {
-            background: #111827;
-            padding: 20px;
-            border-radius: 14px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            border: 2px solid #334155;
-            border-left: 8px solid #00f2fe;
-            margin-bottom: 15px;
-        }
-        .kpi-title { font-size: 14px; color: #94a3b8; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; }
-        .kpi-value { font-size: 28px; font-weight: 900; color: #00f2fe; margin-top: 5px; }
-
-        /* Highly Visible Stock Badges on Dark BG */
-        .badge-success { background-color: #059669; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; border: 1px solid #10b981; }
-        .badge-warning { background-color: #d97706; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; border: 1px solid #f59e0b; }
-        .badge-danger { background-color: #dc2626; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 13px; display: inline-block; border: 1px solid #ef4444; }
-
-        /* Prominent Glowing JazzCash Payment Box */
-        .jazzcash-card {
-            background: #111827;
-            border: 3px solid #ff0055;
-            border-radius: 14px;
-            padding: 15px;
-            text-align: center;
-            box-shadow: 0 0 20px rgba(255, 0, 85, 0.3);
-            margin-top: 15px;
-        }
-        .jazzcash-header {
-            background: linear-gradient(135deg, #ff8000 0%, #ff0055 100%);
-            color: #ffffff;
-            font-weight: 900;
-            font-size: 16px;
-            padding: 8px;
-            border-radius: 8px;
-            margin-bottom: 12px;
-            letter-spacing: 1px;
-        }
-
-        /* Large Clear Dark Input Boxes & Selectboxes */
-        .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
-            background-color: #1e293b !important;
-            border: 2px solid #475569 !important;
-            border-radius: 8px !important;
-            font-weight: 700 !important;
-            font-size: 15px !important;
-            color: #ffffff !important;
-        }
-        
-        /* High Contrast Buttons */
-        .stButton>button {
-            border-radius: 8px !important;
-            font-weight: 800 !important;
-            font-size: 15px !important;
-            padding: 10px 20px !important;
-            border: 1px solid #38bdf8 !important;
-        }
-
-        /* Tab Highlighting */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 8px;
-        }
-        .stTabs [data-baseweb="tab"] {
-            background-color: #1e293b;
-            border-radius: 8px 8px 0 0;
-            color: #94a3b8;
-            font-weight: 800;
-            padding: 10px 20px;
-        }
-        .stTabs [aria-selected="true"] {
-            background-color: #00f2fe !important;
-            color: #090d16 !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# Thermal Receipt Styling
+RECEIPT_CSS = """
+<style>
+    .receipt-box {
+        width: 300px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 12px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        color: #000;
+        margin: 0 auto;
+    }
+    .receipt-header {
+        text-align: center;
+        margin-bottom: 8px;
+    }
+    .receipt-header h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .receipt-line {
+        border-bottom: 1px dashed #000;
+        margin: 5px 0;
+    }
+    .receipt-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .receipt-table th, .receipt-table td {
+        text-align: left;
+        padding: 2px 0;
+    }
+    .receipt-table .num {
+        text-align: right;
+    }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+</style>
+"""
+st.markdown(RECEIPT_CSS, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 2. DATABASE MANAGEMENT
 # ---------------------------------------------------------
 def get_connection():
-    return sqlite3.connect("pharmacy_multi.db", timeout=20, check_same_thread=False)
+    conn = sqlite3.connect("pharmacy_multi.db", timeout=20, check_same_thread=False)
+    return conn
 
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    
+    # Users Table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE,
                     password TEXT,
                     role TEXT)''')
     
+    # Inventory Table
     c.execute('''CREATE TABLE IF NOT EXISTS inventory (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE,
                     category TEXT,
                     price REAL,
-                    stock INTEGER,
-                    batch_no TEXT DEFAULT 'B-001',
-                    expiry_date DATE DEFAULT '2026-12-31')''')
+                    stock INTEGER)''')
     
+    # Sales Table
     c.execute('''CREATE TABLE IF NOT EXISTS sales (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     bill_id TEXT,
@@ -153,26 +94,10 @@ def init_db():
                     discount_pct REAL DEFAULT 0.0,
                     tax_pct REAL DEFAULT 0.0,
                     grand_total REAL DEFAULT 0.0,
-                    payment_method TEXT DEFAULT 'Cash',
                     sold_by TEXT,
                     timestamp DATETIME)''')
     
-    # Migrations
-    c.execute("PRAGMA table_info(inventory)")
-    inv_cols = [col[1] for col in c.fetchall()]
-    if 'batch_no' not in inv_cols:
-        try: c.execute("ALTER TABLE inventory ADD COLUMN batch_no TEXT DEFAULT 'B-001'")
-        except: pass
-    if 'expiry_date' not in inv_cols:
-        try: c.execute("ALTER TABLE inventory ADD COLUMN expiry_date DATE DEFAULT '2026-12-31'")
-        except: pass
-
-    c.execute("PRAGMA table_info(sales)")
-    sales_cols = [col[1] for col in c.fetchall()]
-    if 'payment_method' not in sales_cols:
-        try: c.execute("ALTER TABLE sales ADD COLUMN payment_method TEXT DEFAULT 'Cash'")
-        except: pass
-
+    # Default Accounts
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'admin123', 'admin')")
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('staff1', 'staff123', 'staff')")
     
@@ -181,133 +106,8 @@ def init_db():
 
 init_db()
 
-# Helper: Ultra-Clear High Resolution QR Code URL
-def get_jazzcash_qr_url(amount, bill_id, till_id="00012345"):
-    payload = f"JazzCash Merchant POS|TillID:{till_id}|Bill:{bill_id}|Amount:{amount:.2f}|Currency:PKR"
-    encoded_payload = urllib.parse.quote(payload)
-    return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_payload}&color=ff0055"
-
 # ---------------------------------------------------------
-# 3. THERMAL RECEIPT ENGINE (CLEAR WHITE RECEIPT FOR PRINT)
-# ---------------------------------------------------------
-def generate_receipt_html(bill_id):
-    conn = get_connection()
-    df = pd.read_sql("SELECT * FROM sales WHERE bill_id=?", conn, params=(bill_id,))
-    conn.close()
-    
-    if df.empty:
-        return "<p style='color:#ff5252; font-size:16px; font-weight:bold;'>Bill Record Not Found!</p>"
-
-    row0 = df.iloc[0]
-    cust_name = row0['customer_name']
-    biller = row0['sold_by']
-    date_str = row0['timestamp']
-    pay_mode = row0.get('payment_method', 'Cash')
-    subtotal = float(row0.get('subtotal', 0.0))
-    discount_pct = float(row0.get('discount_pct', 0.0))
-    tax_pct = float(row0.get('tax_pct', 0.0))
-    grand_total = float(row0.get('grand_total', 0.0))
-
-    disc_val = subtotal * (discount_pct / 100.0)
-    tax_val = (subtotal - disc_val) * (tax_pct / 100.0)
-
-    items_rows = ""
-    for _, item in df.iterrows():
-        items_rows += f"""
-        <tr>
-            <td style="padding: 4px 0; font-weight: bold;">{str(item['medicine_name'])[:16]}</td>
-            <td style="text-align: right; padding: 4px 0;">{item['qty']}</td>
-            <td style="text-align: right; padding: 4px 0;">{item['unit_price']:.0f}</td>
-            <td style="text-align: right; padding: 4px 0; font-weight: bold;">{item['total_price']:.0f}</td>
-        </tr>
-        """
-
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            @media print {{
-                @page {{ margin: 0; size: 80mm auto; }}
-                body {{ margin: 0; padding: 5px; }}
-                .no-print {{ display: none !important; }}
-            }}
-            body {{
-                font-family: 'Courier New', monospace;
-                font-size: 13px;
-                color: #000;
-                width: 290px;
-                margin: 0 auto;
-                background-color: #fff;
-                font-weight: 600;
-                padding: 10px;
-                border-radius: 8px;
-            }}
-            .text-center {{ text-align: center; }}
-            .text-right {{ text-align: right; }}
-            .line {{ border-bottom: 2px dashed #000; margin: 8px 0; }}
-            table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-            .btn-print {{
-                background-color: #ff0055;
-                color: #ffffff;
-                padding: 10px 14px;
-                border: none;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 14px;
-                margin-bottom: 12px;
-                width: 100%;
-                font-weight: 900;
-                text-transform: uppercase;
-            }}
-        </style>
-    </head>
-    <body>
-        <button class="btn-print no-print" onclick="window.print()">🖨️ PRINT RECEIPT</button>
-        <div class="text-center">
-            <h2 style="margin:0; font-size:20px; font-weight:900;">A PHARMA</h2>
-            <p style="margin:3px 0; font-size:12px;">ULTRA POS & PHARMACY<br>Helpline: +92-300-0000000</p>
-        </div>
-        <div class="line"></div>
-        <div>
-            <b>Bill ID:</b> {bill_id}<br>
-            <b>Date:</b> {date_str}<br>
-            <b>Customer:</b> {cust_name}<br>
-            <b>Payment Method:</b> {pay_mode}<br>
-            <b>Cashier:</b> {biller}
-        </div>
-        <div class="line"></div>
-        <table>
-            <thead>
-                <tr style="border-bottom: 1px solid #000;">
-                    <th style="text-align:left;">Item</th>
-                    <th style="text-align:right;">Qty</th>
-                    <th style="text-align:right;">Price</th>
-                    <th style="text-align:right;">Total</th>
-                </tr>
-            </thead>
-            <tbody>{items_rows}</tbody>
-        </table>
-        <div class="line"></div>
-        <table>
-            <tr><td>Subtotal:</td><td class="text-right">Rs. {subtotal:,.2f}</td></tr>
-            {"<tr><td>Discount (" + str(discount_pct) + "%):</td><td class='text-right'>-Rs. " + f"{disc_val:,.2f}" + "</td></tr>" if discount_pct > 0 else ""}
-            {"<tr><td>Tax (" + str(tax_pct) + "%):</td><td class='text-right'>+Rs. " + f"{tax_val:,.2f}" + "</td></tr>" if tax_pct > 0 else ""}
-        </table>
-        <div class="line"></div>
-        <div style="font-size:16px; font-weight:900;">
-            GRAND TOTAL: <span style="float:right;">Rs. {grand_total:,.2f}</span>
-        </div>
-        <div class="line"></div>
-        <div class="text-center" style="margin-top:10px;">
-            <p style="margin:0;">Thank You For Choosing Us!<br>*** Get Well Soon ***</p>
-        </div>
-    </body>
-    </html>
-    """
-
-# ---------------------------------------------------------
-# 4. AUTHENTICATION & LOGIN
+# 3. AUTHENTICATION & SESSION STATE
 # ---------------------------------------------------------
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
@@ -315,8 +115,8 @@ if 'authenticated' not in st.session_state:
     st.session_state.role = ""
 if 'cart' not in st.session_state:
     st.session_state.cart = []
-if 'last_printed_bill' not in st.session_state:
-    st.session_state.last_printed_bill = None
+if 'last_receipt' not in st.session_state:
+    st.session_state.last_receipt = None
 
 def login(username, password):
     conn = get_connection()
@@ -330,319 +130,369 @@ def login(username, password):
         st.session_state.role = user[1]
         st.rerun()
     else:
-        st.error("❌ Invalid Username or Password!")
+        st.error("Invalid Username or Password")
 
+# ---------------------------------------------------------
+# 4. LOGIN INTERFACE
+# ---------------------------------------------------------
 if not st.session_state.authenticated:
-    st.markdown("<br><h1 style='text-align: center; color: #00f2fe; font-weight:900; text-shadow: 0 0 10px rgba(0,242,254,0.4);'>💊 A PHARMA LOGIN TERMINAL</h1>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1, 1.2, 1])
-    with c2:
-        st.info("🔑 **Default Access Logins:**\n- **Admin:** `admin` / `admin123`\n- **Staff:** `staff1` / `staff123`")
+    st.title("🔒 A Pharma POS Login")
+    st.info("Default Login -> **Admin:** `admin` / `admin123` | **Staff:** `staff1` / `staff123`")
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
         u = st.text_input("Username")
         p = st.text_input("Password", type="password")
-        if st.button("🚀 Access System", use_container_width=True, type="primary"):
+        if st.button("Login to Terminal", use_container_width=True):
             login(u, p)
     st.stop()
 
 # ---------------------------------------------------------
-# 5. SIDEBAR NAVIGATION
+# 5. HEADER & SIDEBAR MENU
 # ---------------------------------------------------------
-st.sidebar.markdown("<h2 style='color:#00f2fe;'>💊 A PHARMA POS</h2>", unsafe_allow_html=True)
-st.sidebar.markdown(f"👤 **User:** <span style='color:#00f2fe; font-weight:bold;'>{st.session_state.username.upper()}</span>", unsafe_allow_html=True)
-st.sidebar.markdown(f"🔰 **Role:** <span style='color:#ff0055; font-weight:bold;'>{st.session_state.role.upper()}</span>", unsafe_allow_html=True)
-st.sidebar.markdown("---")
+st.sidebar.markdown("## 💊 **A Pharma**")
+st.sidebar.markdown(f"**User:** `{st.session_state.username}` | **Role:** `{st.session_state.role.upper()}`")
 
-if st.sidebar.button("🔄 Refresh Data", use_container_width=True):
+if st.sidebar.button("🔄 Sync & Refresh Data", use_container_width=True):
     st.rerun()
 
-if st.sidebar.button("🚪 Logout System", use_container_width=True):
+if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.session_state.authenticated = False
     st.session_state.cart = []
-    st.session_state.last_printed_bill = None
+    st.session_state.last_receipt = None
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. DASHBOARDS
+# 6. DASHBOARDS ACCORDING TO ROLE
 # ---------------------------------------------------------
 
 # ==================== STAFF DASHBOARD ====================
 if st.session_state.role == "staff":
-    st.markdown("<div class='main-header'>⚡ CHECKOUT & BILLING COUNTER</div>", unsafe_allow_html=True)
+    st.title("🛒 Staff Billing Counter - A Pharma")
     
-    staff_tabs = st.tabs(["🛍️ NEW BILLING COUNTER", "🚨 STOCK ALERTS", "📜 INVOICE HISTORY"])
+    conn = get_connection()
+    inventory_df = pd.read_sql("SELECT id, name, category, price, stock FROM inventory WHERE stock > 0", conn)
+    conn.close()
 
-    # TAB 1: NEW BILLING COUNTER
-    with staff_tabs[0]:
-        conn = get_connection()
-        inventory_df = pd.read_sql("SELECT id, name, price, stock, batch_no, expiry_date FROM inventory WHERE stock > 0", conn)
-        conn.close()
+    col1, col2 = st.columns([1.3, 1])
 
-        col_med, col_cart = st.columns([1.3, 1])
-
-        with col_med:
-            st.markdown("### 1️⃣ Select Items")
-            cust_name = st.text_input("Customer Name", value="Walk-in Customer")
+    with col1:
+        st.subheader("Add Medicines to Bill")
+        cust_name = st.text_input("Customer Name", value="Walk-in Customer")
+        
+        if not inventory_df.empty:
+            # ✨ FEATURE 1: Category Filter & Quick Search
+            filter_col1, filter_col2 = st.columns(2)
+            categories = ["All"] + list(inventory_df['category'].unique())
             
-            if not inventory_df.empty:
-                selected_med = st.selectbox("🔍 Search Medicine Name", inventory_df['name'].tolist())
-                med_info = inventory_df[inventory_df['name'] == selected_med].iloc[0]
+            with filter_col1:
+                selected_cat = st.selectbox("Filter Category", categories)
+            with filter_col2:
+                search_query = st.text_input("🔎 Search Medicine", "")
+
+            # Apply Filtering
+            filtered_df = inventory_df.copy()
+            if selected_cat != "All":
+                filtered_df = filtered_df[filtered_df['category'] == selected_cat]
+            if search_query:
+                filtered_df = filtered_df[filtered_df['name'].str.contains(search_query, case=False, na=False)]
+
+            if not filtered_df.empty:
+                selected_med = st.selectbox("Select Medicine", filtered_df['name'].tolist())
+                med_info = filtered_df[filtered_df['name'] == selected_med].iloc[0]
                 
                 in_cart_qty = sum(item['qty'] for item in st.session_state.cart if item['name'] == selected_med)
                 available_stock = int(med_info['stock']) - in_cart_qty
 
-                # Clear Visual Info Card
-                badge_html = f"<span class='badge-success'>{available_stock} Units Available</span>" if available_stock > 10 else f"<span class='badge-warning'>Low Stock: {available_stock} Left</span>"
-                st.markdown(f"""
-                <div class='kpi-card' style='border-left-color: #00f2fe;'>
-                    <div style='font-size:22px; font-weight:800; color:#00f2fe;'>Unit Price: Rs. {med_info['price']:,.2f}</div>
-                    <div style='margin: 8px 0;'><b>Stock Status:</b> {badge_html}</div>
-                    <div style='color:#94a3b8; font-size:13px;'><b>Batch No:</b> {med_info['batch_no']} | <b>Expiry:</b> {med_info['expiry_date']}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.info(f"Available Stock: **{available_stock}** | Unit Price: **Rs. {med_info['price']:.2f}**")
                 
                 if available_stock > 0:
-                    qty = st.number_input("Enter Quantity", min_value=1, max_value=available_stock, value=1)
-
-                    if st.button("➕ Add Item to Cart", use_container_width=True, type="primary"):
-                        st.session_state.cart.append({
-                            "name": selected_med,
-                            "unit_price": float(med_info['price']),
-                            "qty": int(qty),
-                            "subtotal": float(med_info['price']) * int(qty)
-                        })
-                        st.toast(f"✅ Added {selected_med} (Qty: {qty})")
+                    qty = st.number_input("Quantity", min_value=1, max_value=available_stock, value=1)
+                    if st.button("➕ Add to Cart", use_container_width=True):
+                        found = False
+                        for item in st.session_state.cart:
+                            if item['name'] == selected_med:
+                                item['qty'] += qty
+                                item['total'] = item['qty'] * item['price']
+                                found = True
+                                break
+                        if not found:
+                            st.session_state.cart.append({
+                                'id': med_info['id'],
+                                'name': selected_med,
+                                'price': med_info['price'],
+                                'qty': qty,
+                                'total': qty * med_info['price']
+                            })
+                        st.success(f"Added {qty} x {selected_med} to cart.")
                         st.rerun()
                 else:
-                    st.error("⚠️ Stock limit reached for this item!")
+                    st.warning("Selected medicine is out of stock!")
             else:
-                st.warning("⚠️ No available stock found in database!")
-
-        with col_cart:
-            st.markdown("### 2️⃣ Order & Payment")
-            if st.session_state.cart:
-                cart_df = pd.DataFrame(st.session_state.cart)
-                
-                # Clear Table Display
-                st.dataframe(cart_df[['name', 'qty', 'unit_price', 'subtotal']], use_container_width=True, height=180)
-                
-                subtotal = float(cart_df['subtotal'].sum())
-                
-                cp1, cp2, cp3 = st.columns(3)
-                with cp1:
-                    pay_method = st.selectbox("Payment Mode", ["Cash", "JazzCash", "Card", "EasyPaisa"])
-                with cp2:
-                    discount_pct = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=0.0)
-                with cp3:
-                    tax_pct = st.number_input("Tax (%)", min_value=0.0, max_value=50.0, value=0.0)
-                
-                disc_val = subtotal * (discount_pct / 100.0)
-                tax_val = (subtotal - disc_val) * (tax_pct / 100.0)
-                grand_total = (subtotal - disc_val) + tax_val
-
-                st.markdown(f"<h2 style='color:#00e676; font-weight:900; text-shadow: 0 0 10px rgba(0,230,118,0.3);'>Grand Total: Rs. {grand_total:,.2f}</h2>", unsafe_allow_html=True)
-
-                # HIGH VISIBILITY DARK JAZZCASH INTEGRATION
-                if pay_method == "JazzCash":
-                    temp_bill_id = f"AP-{datetime.now().strftime('%M%S')}"
-                    qr_url = get_jazzcash_qr_url(grand_total, temp_bill_id)
-                    
-                    st.markdown(f"""
-                    <div class='jazzcash-card'>
-                        <div class='jazzcash-header'>🔴 JAZZCASH QR PAYMENT</div>
-                        <div style='color:#f8fafc; font-weight:800; font-size:14px; margin-bottom:8px;'>Scan via JazzCash App to Pay</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.image(qr_url, caption=f"Scan & Pay Exact Amount: Rs. {grand_total:,.2f}", width=220)
-
-                b_col1, b_col2 = st.columns(2)
-                with b_col1:
-                    if st.button("Empty Cart ❌", use_container_width=True):
-                        st.session_state.cart = []
-                        st.rerun()
-
-                with b_col2:
-                    if st.button("Checkout & Print Bill 🚀", type="primary", use_container_width=True):
-                        bill_id = f"AP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        conn = get_connection()
-                        c = conn.cursor()
-                        try:
-                            for item in st.session_state.cart:
-                                c.execute('''INSERT INTO sales 
-                                             (bill_id, customer_name, medicine_name, qty, unit_price, total_price, subtotal, discount_pct, tax_pct, grand_total, payment_method, sold_by, timestamp) 
-                                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                                          (bill_id, cust_name, item['name'], item['qty'], item['unit_price'], item['subtotal'], subtotal, discount_pct, tax_pct, grand_total, pay_method, st.session_state.username, now_str))
-                                
-                                c.execute("UPDATE inventory SET stock = stock - ? WHERE name = ?", (item['qty'], item['name']))
-                            
-                            conn.commit()
-                            st.session_state.last_printed_bill = bill_id
-                            st.session_state.cart = []
-                            st.success(f"✅ Transaction Completed! Invoice ID: {bill_id}")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error saving sale: {e}")
-                        finally:
-                            conn.close()
-            else:
-                st.info("🛒 Cart is empty. Select items to generate receipt.")
-
-        # THERMAL RECEIPT DISPLAY
-        if st.session_state.last_printed_bill:
-            st.markdown("---")
-            st.markdown(f"### 🖨️ Active Receipt Preview (`{st.session_state.last_printed_bill}`)")
-            rc_html = generate_receipt_html(st.session_state.last_printed_bill)
-            st.components.v1.html(rc_html, height=480, scrolling=True)
-
-    # TAB 2: STOCK ALERTS
-    with staff_tabs[1]:
-        st.markdown("### 🚨 Low Stock & Expiry Tracking")
-        conn = get_connection()
-        alerts_df = pd.read_sql("SELECT name AS 'Medicine', category AS 'Category', price AS 'Price (Rs.)', stock AS 'Remaining Stock', expiry_date AS 'Expiry Date' FROM inventory", conn)
-        conn.close()
-
-        if not alerts_df.empty:
-            low_stock = alerts_df[alerts_df['Remaining Stock'] <= 10]
-            if not low_stock.empty:
-                st.warning("⚠️ Critical Low Stock Items Found!")
-                st.dataframe(low_stock, use_container_width=True)
-            else:
-                st.success("✅ All stock levels are sufficient.")
+                st.warning("No medicines match your search/filter.")
         else:
-            st.info("No stock records available.")
+            st.warning("No available inventory found. Please contact Administrator.")
 
-    # TAB 3: RECEIPT HISTORY
-    with staff_tabs[2]:
-        st.markdown("### 📜 Invoice & Transaction History")
-        conn = get_connection()
-        bills_df = pd.read_sql("SELECT bill_id, customer_name, grand_total, payment_method, sold_by, timestamp FROM sales GROUP BY bill_id ORDER BY MAX(id) DESC LIMIT 30", conn)
-        conn.close()
+        # Display Current Cart
+        st.subheader("Cart Items")
+        if st.session_state.cart:
+            cart_df = pd.DataFrame(st.session_state.cart)
+            st.dataframe(cart_df[['name', 'price', 'qty', 'total']], use_container_width=True)
+            
+            if st.button("🗑️ Clear Cart"):
+                st.session_state.cart = []
+                st.rerun()
+        else:
+            st.caption("Cart is currently empty.")
 
-        if not bills_df.empty:
-            sel_bill = st.selectbox("Select Invoice to Re-Print", bills_df['bill_id'].tolist())
-            if sel_bill:
-                rc_html_history = generate_receipt_html(sel_bill)
-                st.components.v1.html(rc_html_history, height=480, scrolling=True)
+    with col2:
+        st.subheader("Checkout & Receipt")
+        if st.session_state.cart:
+            subtotal = sum(item['total'] for item in st.session_state.cart)
+            discount = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=0.0)
+            tax = st.number_input("Tax (%)", min_value=0.0, max_value=100.0, value=0.0)
+
+            discount_amount = subtotal * (discount / 100)
+            tax_amount = (subtotal - discount_amount) * (tax / 100)
+            grand_total = subtotal - discount_amount + tax_amount
+
+            st.markdown(f"**Subtotal:** Rs. {subtotal:.2f}")
+            st.markdown(f"**Discount:** -Rs. {discount_amount:.2f}")
+            st.markdown(f"**Tax:** +Rs. {tax_amount:.2f}")
+            st.markdown(f"### **Grand Total:** Rs. {grand_total:.2f}")
+
+            if st.button("✅ Complete Sale & Print Receipt", use_container_width=True):
+                bill_id = f"BILL-{int(time.time())}"
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                conn = get_connection()
+                c = conn.cursor()
+
+                for item in st.session_state.cart:
+                    c.execute("""INSERT INTO sales 
+                                (bill_id, customer_name, medicine_name, qty, unit_price, total_price, subtotal, discount_pct, tax_pct, grand_total, sold_by, timestamp)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                              (bill_id, cust_name, item['name'], item['qty'], item['price'], item['total'],
+                               subtotal, discount, tax, grand_total, st.session_state.username, now))
+
+                    c.execute("UPDATE inventory SET stock = stock - ? WHERE id = ?", (item['qty'], item['id']))
+
+                conn.commit()
+                conn.close()
+
+                st.session_state.last_receipt = {
+                    'bill_id': bill_id,
+                    'customer': cust_name,
+                    'items': st.session_state.cart.copy(),
+                    'subtotal': subtotal,
+                    'discount': discount_amount,
+                    'tax': tax_amount,
+                    'grand_total': grand_total,
+                    'date': now,
+                    'sold_by': st.session_state.username
+                }
+
+                st.session_state.cart = []
+                st.success("Sale processed successfully!")
+                st.rerun()
+
+        # Render thermal receipt if available
+        if st.session_state.last_receipt:
+            r = st.session_state.last_receipt
+            items_html = ""
+            for item in r['items']:
+                items_html += f"""
+                <tr>
+                    <td>{item['name']} x{item['qty']}</td>
+                    <td class="num">{item['total']:.2f}</td>
+                </tr>
+                """
+
+            receipt_html = f"""
+            <div class="receipt-box">
+                <div class="receipt-header">
+                    <h2>A PHARMA</h2>
+                    <p>Multi-Counter POS System</p>
+                    <p>Bill #: {r['bill_id']}<br>Date: {r['date']}</p>
+                </div>
+                <div class="receipt-line"></div>
+                <p><strong>Customer:</strong> {r['customer']}<br><strong>Cashier:</strong> {r['sold_by']}</p>
+                <div class="receipt-line"></div>
+                <table class="receipt-table">
+                    <thead>
+                        <tr><th>Item</th><th class="num">Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        {items_html}
+                    </tbody>
+                </table>
+                <div class="receipt-line"></div>
+                <table class="receipt-table">
+                    <tr><td>Subtotal</td><td class="num">{r['subtotal']:.2f}</td></tr>
+                    <tr><td>Discount</td><td class="num">-{r['discount']:.2f}</td></tr>
+                    <tr><td>Tax</td><td class="num">+{r['tax']:.2f}</td></tr>
+                    <tr><td><strong>Grand Total</strong></td><td class="num"><strong>Rs. {r['grand_total']:.2f}</strong></td></tr>
+                </table>
+                <div class="receipt-line"></div>
+                <p class="text-center">Thank you! Get Well Soon!</p>
+            </div>
+            """
+            st.markdown(receipt_html, unsafe_allow_html=True)
 
 # ==================== ADMIN DASHBOARD ====================
 elif st.session_state.role == "admin":
-    st.markdown("<div class='main-header'>⚙️ BUSINESS INTELLIGENCE & ADMIN CONTROL</div>", unsafe_allow_html=True)
-    
-    tabs = st.tabs(["📊 ANALYTICS & KPIS", "📦 INVENTORY CONTROL", "👥 STAFF MANAGEMENT"])
+    st.title("⚙️ Admin Dashboard - A Pharma")
 
-    # TAB 1: ANALYTICS
-    with tabs[0]:
+    # ✨ FEATURE 2: Low Stock Warning Alert
+    conn = get_connection()
+    low_stock_df = pd.read_sql("SELECT name, stock FROM inventory WHERE stock <= 5", conn)
+    conn.close()
+
+    if not low_stock_df.empty:
+        st.error(f"⚠️ **Low Stock Alert ({len(low_stock_df)} items remaining <= 5):** " + 
+                 ", ".join([f"{row['name']} ({row['stock']} left)" for _, row in low_stock_df.iterrows()]))
+
+    tab1, tab2, tab3 = st.tabs(["📦 Inventory Management", "📊 Sales Analytics", "👤 User Management"])
+
+    # TAB 1: INVENTORY MANAGEMENT
+    with tab1:
+        st.subheader("Add / Update Medicine")
+        col_a, col_b, col_c, col_d = st.columns(4)
+        
+        with col_a:
+            med_name = st.text_input("Medicine Name")
+        with col_b:
+            category = st.text_input("Category", value="General")
+        with col_c:
+            price = st.number_input("Price (Rs.)", min_value=0.0, step=0.5)
+        with col_d:
+            stock = st.number_input("Stock Qty", min_value=0, step=1)
+
+        if st.button("💾 Save Medicine"):
+            if med_name:
+                conn = get_connection()
+                c = conn.cursor()
+                c.execute("""INSERT INTO inventory (name, category, price, stock) 
+                             VALUES (?, ?, ?, ?)
+                             ON CONFLICT(name) DO UPDATE SET 
+                             category=excluded.category, 
+                             price=excluded.price, 
+                             stock=stock + excluded.stock""", (med_name, category, price, stock))
+                conn.commit()
+                conn.close()
+                st.success(f"Inventory item '{med_name}' updated successfully.")
+                st.rerun()
+            else:
+                st.error("Please enter a valid medicine name.")
+
+        st.subheader("Current Stock Inventory")
         conn = get_connection()
-        sales_df = pd.read_sql("SELECT * FROM sales ORDER BY id DESC", conn)
+        inv_df = pd.read_sql("SELECT * FROM inventory", conn)
+        conn.close()
+
+        if not inv_df.empty:
+            st.dataframe(inv_df, use_container_width=True)
+            
+            # ✨ FEATURE 3: Quick Stock Update
+            st.markdown("---")
+            st.caption("⚡ Quick Stock Adjuster")
+            q_col1, q_col2, q_col3 = st.columns([2, 1, 1])
+            with q_col1:
+                selected_stock_med = st.selectbox("Select Medicine to Modify Stock", inv_df['name'].tolist())
+            with q_col2:
+                new_stock_val = st.number_input("New Total Stock", min_value=0, step=1)
+            with q_col3:
+                st.write("")
+                st.write("")
+                if st.button("Update Stock"):
+                    conn = get_connection()
+                    c = conn.cursor()
+                    c.execute("UPDATE inventory SET stock = ? WHERE name = ?", (new_stock_val, selected_stock_med))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"Updated {selected_stock_med} stock to {new_stock_val}")
+                    st.rerun()
+        else:
+            st.info("No items currently in inventory.")
+
+    # TAB 2: SALES ANALYTICS
+    with tab2:
+        st.subheader("Sales Reports")
+        conn = get_connection()
+        sales_df = pd.read_sql("SELECT * FROM sales ORDER BY timestamp DESC", conn)
         conn.close()
 
         if not sales_df.empty:
-            unique_bills = sales_df.drop_duplicates(subset=['bill_id'])
-            total_rev = unique_bills['grand_total'].sum()
-            total_items = sales_df['qty'].sum()
-            total_tx = len(unique_bills)
+            col_m1, col_m2, col_m3 = st.columns(3)
+            total_rev = sales_df.drop_duplicates(subset=['bill_id'])['grand_total'].sum()
+            total_bills = sales_df['bill_id'].nunique()
+            items_sold = sales_df['qty'].sum()
 
-            m1, m2, m3 = st.columns(3)
-            m1.markdown(f"""
-            <div class='kpi-card'>
-                <div class='kpi-title'>Total Net Sales Revenue</div>
-                <div class='kpi-value'>Rs. {total_rev:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            m2.markdown(f"""
-            <div class='kpi-card' style='border-left-color: #00e676;'>
-                <div class='kpi-title'>Total Quantity Sold</div>
-                <div class='kpi-value' style='color:#00e676;'>{int(total_items):,} Units</div>
-            </div>
-            """, unsafe_allow_html=True)
+            col_m1.metric("Total Revenue", f"Rs. {total_rev:,.2f}")
+            col_m2.metric("Total Transactions", total_bills)
+            col_m3.metric("Total Items Sold", items_sold)
 
-            m3.markdown(f"""
-            <div class='kpi-card' style='border-left-color: #ff0055;'>
-                <div class='kpi-title'>Completed Transactions</div>
-                <div class='kpi-value' style='color:#ff0055;'>{total_tx:,} Bills</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("### 📈 Top Selling Medicines")
-            top_meds = sales_df.groupby('medicine_name')['qty'].sum().reset_index().sort_values(by='qty', ascending=False).head(7)
-            st.bar_chart(data=top_meds, x='medicine_name', y='qty', use_container_width=True)
-
-            st.markdown("---")
-            st.markdown("### 📄 Master Sales Audit Log")
+            # ✨ FEATURE 4: Download Sales CSV Button
+            csv_data = sales_df.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Export Complete Sales Log (CSV)",
-                data=sales_df.to_csv(index=False).encode('utf-8'),
-                file_name=f"Sales_Report_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime='text/csv'
+                label="📥 Download Sales Data as CSV",
+                data=csv_data,
+                file_name=f"sales_report_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
             )
+
+            st.subheader("Recent Transactions")
             st.dataframe(sales_df, use_container_width=True)
         else:
-            st.info("No sales transactions recorded yet.")
+            st.info("No sales data recorded yet.")
 
-    # TAB 2: INVENTORY CONTROL
-    with tabs[1]:
-        st.markdown("### 📦 Add or Restock Medicine")
-        c1, c2 = st.columns([1, 1.5])
-        
-        with c1:
-            m_name = st.text_input("Medicine Name")
-            m_cat = st.selectbox("Category", ["Tablet", "Syrup", "Injection", "Capsule", "Ointment", "Other"])
-            m_price = st.number_input("Unit Selling Price (Rs.)", min_value=0.0, format="%.2f")
-            m_stock = st.number_input("Stock Quantity to Add", min_value=0, step=1)
-            m_batch = st.text_input("Batch No.", value="B-101")
-            m_expiry = st.date_input("Expiry Date", datetime.now() + timedelta(days=365))
+    # TAB 3: USER MANAGEMENT
+    with tab3:
+        st.subheader("Create New User")
+        u_col1, u_col2, u_col3 = st.columns(3)
+        with u_col1:
+            new_u = st.text_input("New Username")
+        with u_col2:
+            new_p = st.text_input("New Password", type="password")
+        with u_col3:
+            new_r = st.selectbox("Role", ["staff", "admin"])
 
-            if st.button("Save Item to Inventory", use_container_width=True, type="primary"):
-                if m_name:
+        if st.button("➕ Create Account"):
+            if new_u and new_p:
+                conn = get_connection()
+                c = conn.cursor()
+                try:
+                    c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (new_u, new_p, new_r))
+                    conn.commit()
+                    st.success(f"User '{new_u}' added successfully!")
+                except sqlite3.IntegrityError:
+                    st.error("Username already exists!")
+                finally:
+                    conn.close()
+            else:
+                st.error("Username and Password are required.")
+
+        st.subheader("System Users")
+        conn = get_connection()
+        users_df = pd.read_sql("SELECT id, username, role FROM users", conn)
+        conn.close()
+        st.dataframe(users_df, use_container_width=True)
+
+        # ✨ FEATURE 5: Delete System Users
+        if len(users_df) > 1:
+            st.markdown("---")
+            st.caption("🗑️ Delete User Account")
+            d_col1, d_col2 = st.columns([2, 1])
+            with d_col1:
+                user_to_delete = st.selectbox("Select User to Remove", users_df[users_df['username'] != st.session_state.username]['username'].tolist())
+            with d_col2:
+                st.write("")
+                st.write("")
+                if st.button("❌ Delete User"):
                     conn = get_connection()
                     c = conn.cursor()
-                    try:
-                        c.execute("INSERT INTO inventory (name, category, price, stock, batch_no, expiry_date) VALUES (?, ?, ?, ?, ?, ?)",
-                                  (m_name, m_cat, m_price, m_stock, m_batch, str(m_expiry)))
-                        conn.commit()
-                        st.success(f"✅ Added {m_name} to database!")
-                    except sqlite3.IntegrityError:
-                        c.execute("UPDATE inventory SET category=?, price=?, stock=stock+?, batch_no=?, expiry_date=? WHERE name=?",
-                                  (m_cat, m_price, m_stock, m_batch, str(m_expiry), m_name))
-                        conn.commit()
-                        st.success(f"✅ Updated Stock for {m_name}!")
-                    finally:
-                        conn.close()
-                        st.rerun()
-
-        with c2:
-            st.markdown("### 📋 Current Active Stock Table")
-            conn = get_connection()
-            inv_df = pd.read_sql("SELECT id AS 'ID', name AS 'Name', category AS 'Category', price AS 'Price (Rs.)', stock AS 'Stock', batch_no AS 'Batch', expiry_date AS 'Expiry' FROM inventory", conn)
-            conn.close()
-            st.dataframe(inv_df, use_container_width=True)
-
-    # TAB 3: STAFF MANAGEMENT
-    with tabs[2]:
-        st.markdown("### 👥 Manage Staff Accounts")
-        u1, u2 = st.columns([1, 1.5])
-        
-        with u1:
-            n_user = st.text_input("New Staff Username")
-            n_pass = st.text_input("New Staff Password", type="password")
-            if st.button("Create Staff Account", use_container_width=True):
-                if n_user and n_pass:
-                    conn = get_connection()
-                    c = conn.cursor()
-                    try:
-                        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, 'staff')", (n_user, n_pass))
-                        conn.commit()
-                        st.success(f"✅ Staff Account '{n_user}' created successfully!")
-                        st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("⚠️ Username already exists!")
-                    finally:
-                        conn.close()
-
-        with u2:
-            conn = get_connection()
-            users_df = pd.read_sql("SELECT id AS 'User ID', username AS 'Username', role AS 'System Role' FROM users", conn)
-            conn.close()
-            st.dataframe(users_df, use_container_width=True)
+                    c.execute("DELETE FROM users WHERE username = ?", (user_to_delete,))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"User '{user_to_delete}' removed.")
+                    st.rerun()
