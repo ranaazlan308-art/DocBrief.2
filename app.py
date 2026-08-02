@@ -3,6 +3,77 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import time
+import os
+import platform
+import threading
+
+# ---------------------------------------------------------
+# 0. AUTOMATIC SILENT PRINTING FUNCTION (Threaded)
+# ---------------------------------------------------------
+def print_receipt_in_background(receipt_data):
+    """
+    یہ فنکشن بیک گراؤنڈ تھریڈ میں خودکار پرنٹ چلاتا ہے تاکہ UI بلاک نہ ہو۔
+    """
+    def _print_job():
+        try:
+            # 1. ٹیکسٹ فارمیٹڈ بل بنائیں
+            text_receipt = f"""
+================================
+           A PHARMA             
+    Multi-Counter POS System    
+================================
+Bill #: {receipt_data['bill_id']}
+Date  : {receipt_data['date']}
+Cust  : {receipt_data['customer']}
+Cashier: {receipt_data['sold_by']}
+--------------------------------
+ITEM               QTY     PRICE
+--------------------------------
+"""
+            for item in receipt_data['items']:
+                name = item['name'][:18].ljust(18)
+                qty = str(item['qty']).rjust(3)
+                total = f"{item['total']:.2f}".rjust(7)
+                text_receipt += f"{name} {qty}  {total}\n"
+
+            text_receipt += f"""--------------------------------
+Subtotal:          Rs. {receipt_data['subtotal']:.2f}
+Discount:         -Rs. {receipt_data['discount']:.2f}
+Tax:              +Rs. {receipt_data['tax']:.2f}
+--------------------------------
+GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
+================================
+    Thank you! Get Well Soon!   
+================================
+\n\n\n\n\n"""
+
+            # 2. ٹیمپریری فائل میں سیو کریں
+            filename = f"temp_receipt_{receipt_data['bill_id']}.txt"
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(text_receipt)
+
+            # 3. آپریٹنگ سسٹم کے مطابق پرنٹ کی کمانڈ
+            sys_name = platform.system()
+            if sys_name == "Windows":
+                # Windows پر ڈیفالٹ پرنٹر پر پرنٹ کرنے کے لیے
+                os.system(f'notepad /p "{filename}"')
+            elif sys_name in ["Linux", "Darwin"]:
+                # Linux / Mac پر ڈیفالٹ تھرمل پرنٹر (lp command)
+                os.system(f'lp "{filename}"')
+
+            # 4. فائل ڈیلیٹ کر دیں
+            time.sleep(2)
+            if os.path.exists(filename):
+                os.remove(filename)
+
+        except Exception as e:
+            print(f"Printing Error: {e}")
+
+    # Background Thread شروع کریں
+    thread = threading.Thread(target=_print_job)
+    thread.daemon = True
+    thread.start()
+
 
 # ---------------------------------------------------------
 # 1. PAGE CONFIGURATION & STYLING
@@ -13,7 +84,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Thermal Receipt Styling
+# Thermal Receipt Styling & Auto-Print Script
 RECEIPT_CSS = """
 <style>
     .receipt-box {
@@ -52,6 +123,22 @@ RECEIPT_CSS = """
     }
     .text-center { text-align: center; }
     .text-right { text-align: right; }
+
+    @media print {
+        body * {
+            visibility: hidden;
+        }
+        .receipt-box, .receipt-box * {
+            visibility: visible;
+        }
+        .receipt-box {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            border: none;
+        }
+    }
 </style>
 """
 st.markdown(RECEIPT_CSS, unsafe_allow_html=True)
@@ -66,14 +153,12 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # Users Table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE,
                     password TEXT,
                     role TEXT)''')
     
-    # Inventory Table
     c.execute('''CREATE TABLE IF NOT EXISTS inventory (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE,
@@ -81,7 +166,6 @@ def init_db():
                     price REAL,
                     stock INTEGER)''')
     
-    # Sales Table
     c.execute('''CREATE TABLE IF NOT EXISTS sales (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     bill_id TEXT,
@@ -97,7 +181,6 @@ def init_db():
                     sold_by TEXT,
                     timestamp DATETIME)''')
     
-    # Default Accounts
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'admin123', 'admin')")
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('staff1', 'staff123', 'staff')")
     
@@ -181,7 +264,6 @@ if st.session_state.role == "staff":
         cust_name = st.text_input("Customer Name", value="Walk-in Customer")
         
         if not inventory_df.empty:
-            # Category Filter & Search
             filter_col1, filter_col2 = st.columns(2)
             categories = ["All"] + list(inventory_df['category'].dropna().unique())
             
@@ -232,7 +314,6 @@ if st.session_state.role == "staff":
         else:
             st.warning("No available inventory found. Please contact Administrator.")
 
-        # Display Current Cart
         st.subheader("Cart Items")
         if st.session_state.cart:
             cart_df = pd.DataFrame(st.session_state.cart)
@@ -249,7 +330,7 @@ if st.session_state.role == "staff":
         if st.session_state.cart:
             subtotal = sum(item['total'] for item in st.session_state.cart)
             
-            # ✨ Auto 10% Discount and Auto 3% Tax Added (Default Values)
+            # Auto 10% Discount and 3% Tax
             discount = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=10.0)
             tax = st.number_input("Tax (%)", min_value=0.0, max_value=100.0, value=3.0)
 
@@ -281,7 +362,7 @@ if st.session_state.role == "staff":
                 conn.commit()
                 conn.close()
 
-                st.session_state.last_receipt = {
+                receipt_obj = {
                     'bill_id': bill_id,
                     'customer': cust_name,
                     'items': st.session_state.cart.copy(),
@@ -293,11 +374,16 @@ if st.session_state.role == "staff":
                     'sold_by': st.session_state.username
                 }
 
+                st.session_state.last_receipt = receipt_obj
+
+                # 🖨️ خودکار پرنٹنگ کو بیک گراؤنڈ تھریڈ میں بھیجیں
+                print_receipt_in_background(receipt_obj)
+
                 st.session_state.cart = []
-                st.success("Sale processed successfully!")
+                st.success("Sale processed & sent to printer!")
                 st.rerun()
 
-        # Thermal receipt layout
+        # Receipt Layout
         if st.session_state.last_receipt:
             r = st.session_state.last_receipt
             items_html = ""
@@ -310,7 +396,7 @@ if st.session_state.role == "staff":
                 """
 
             receipt_html = f"""
-            <div class="receipt-box">
+            <div class="receipt-box" id="thermal-receipt">
                 <div class="receipt-header">
                     <h2>A PHARMA</h2>
                     <p>Multi-Counter POS System</p>
@@ -339,12 +425,15 @@ if st.session_state.role == "staff":
             </div>
             """
             st.markdown(receipt_html, unsafe_allow_html=True)
+            
+            # Browser Manual Print Option (If physical printer isn't connected)
+            if st.button("🖨️ Manual Print (Browser Dialogue)", use_container_width=True):
+                st.components.v1.html("<script>window.print();</script>", height=0)
 
 # ==================== ADMIN DASHBOARD ====================
 elif st.session_state.role == "admin":
     st.title("⚙️ Admin Dashboard - A Pharma")
 
-    # Low Stock Warning Alert
     conn = get_connection()
     low_stock_df = pd.read_sql("SELECT name, stock FROM inventory WHERE stock <= 5", conn)
     conn.close()
@@ -432,7 +521,6 @@ elif st.session_state.role == "admin":
             col_m2.metric("Total Transactions", total_bills)
             col_m3.metric("Total Items Sold", items_sold)
 
-            # CSV Download Option
             csv_data = sales_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Sales Data as CSV",
@@ -478,7 +566,6 @@ elif st.session_state.role == "admin":
         conn.close()
         st.dataframe(users_df, use_container_width=True)
 
-        # Remove Users Section
         if len(users_df) > 1:
             st.markdown("---")
             st.caption("🗑️ Delete User Account")
