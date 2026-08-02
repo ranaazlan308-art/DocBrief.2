@@ -8,15 +8,15 @@ import platform
 import threading
 
 # ---------------------------------------------------------
-# 0. AUTOMATIC SILENT PRINTING FUNCTION (Threaded)
+# 0. AUTOMATIC THERMAL PRINTING FUNCTION (Threaded)
 # ---------------------------------------------------------
 def print_receipt_in_background(receipt_data):
     """
-    یہ فنکشن بیک گراؤنڈ تھریڈ میں خودکار پرنٹ چلاتا ہے تاکہ UI بلاک نہ ہو۔
+    یہ فنکشن بغیر کسی تاخیر کے تھرمل پرنٹر پر بل بھیجتا ہے۔
     """
     def _print_job():
         try:
-            # 1. ٹیکسٹ فارمیٹڈ بل بنائیں
+            # 1. ٹیکسٹ فارمیٹڈ بل (80mm/58mm Thermal Printer Optimized)
             text_receipt = f"""
 ================================
            A PHARMA             
@@ -27,14 +27,14 @@ Date  : {receipt_data['date']}
 Cust  : {receipt_data['customer']}
 Cashier: {receipt_data['sold_by']}
 --------------------------------
-ITEM               QTY     PRICE
+ITEM               QTY    AMOUNT
 --------------------------------
 """
             for item in receipt_data['items']:
-                name = item['name'][:18].ljust(18)
-                qty = str(item['qty']).rjust(3)
-                total = f"{item['total']:.2f}".rjust(7)
-                text_receipt += f"{name} {qty}  {total}\n"
+                name = item['name'][:16].ljust(16)
+                qty = f"x{item['qty']}".rjust(4)
+                total = f"{item['total']:.2f}".rjust(8)
+                text_receipt += f"{name} {qty} {total}\n"
 
             text_receipt += f"""--------------------------------
 Subtotal:          Rs. {receipt_data['subtotal']:.2f}
@@ -43,25 +43,24 @@ Tax:              +Rs. {receipt_data['tax']:.2f}
 --------------------------------
 GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
 ================================
-    Thank you! Get Well Soon!   
+   Thank You! Get Well Soon!    
 ================================
 \n\n\n\n\n"""
 
-            # 2. ٹیمپریری فائل میں سیو کریں
+            # 2. ٹیمپریری فائل بنائیں
             filename = f"temp_receipt_{receipt_data['bill_id']}.txt"
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(text_receipt)
 
-            # 3. آپریٹنگ سسٹم کے مطابق پرنٹ کی کمانڈ
+            # 3. آپریٹنگ سسٹم کی بنیاد پر پرنٹ بھیجیں
             sys_name = platform.system()
             if sys_name == "Windows":
-                # Windows پر ڈیفالٹ پرنٹر پر پرنٹ کرنے کے لیے
-                os.system(f'notepad /p "{filename}"')
+                # Windows Print Spooler (Direct to Default Printer)
+                os.system(f'print /d:PRN "{filename}" 2>NUL || notepad /p "{filename}"')
             elif sys_name in ["Linux", "Darwin"]:
-                # Linux / Mac پر ڈیفالٹ تھرمل پرنٹر (lp command)
+                # Linux/Mac CUPS printer
                 os.system(f'lp "{filename}"')
 
-            # 4. فائل ڈیلیٹ کر دیں
             time.sleep(2)
             if os.path.exists(filename):
                 os.remove(filename)
@@ -69,7 +68,7 @@ GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
         except Exception as e:
             print(f"Printing Error: {e}")
 
-    # Background Thread شروع کریں
+    # Background Thread پر عملدرآمد
     thread = threading.Thread(target=_print_job)
     thread.daemon = True
     thread.start()
@@ -79,36 +78,37 @@ GRAND TOTAL:       Rs. {receipt_data['grand_total']:.2f}
 # 1. PAGE CONFIGURATION & STYLING
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="A Pharma - Multi-Counter POS",
+    page_title="A Pharma - Thermal POS",
     page_icon="💊",
     layout="wide"
 )
 
-# Thermal Receipt Styling & Auto-Print Script
+# Thermal Receipt Styling & Auto-Print CSS
 RECEIPT_CSS = """
 <style>
     .receipt-box {
-        width: 300px;
+        width: 280px;
         font-family: 'Courier New', Courier, monospace;
-        font-size: 12px;
+        font-size: 11px;
+        line-height: 1.2;
         padding: 10px;
-        border: 1px solid #ccc;
+        border: 1px solid #000;
         background-color: #fff;
         color: #000;
         margin: 0 auto;
     }
     .receipt-header {
         text-align: center;
-        margin-bottom: 8px;
+        margin-bottom: 5px;
     }
-    .receipt-header h2 {
+    .receipt-header h3 {
         margin: 0;
-        font-size: 18px;
+        font-size: 16px;
         font-weight: bold;
     }
     .receipt-line {
         border-bottom: 1px dashed #000;
-        margin: 5px 0;
+        margin: 4px 0;
     }
     .receipt-table {
         width: 100%;
@@ -116,27 +116,26 @@ RECEIPT_CSS = """
     }
     .receipt-table th, .receipt-table td {
         text-align: left;
-        padding: 2px 0;
+        padding: 1px 0;
     }
     .receipt-table .num {
         text-align: right;
     }
     .text-center { text-align: center; }
-    .text-right { text-align: right; }
 
     @media print {
         body * {
-            visibility: hidden;
+            visibility: hidden !important;
         }
-        .receipt-box, .receipt-box * {
-            visibility: visible;
+        #thermal-receipt-container, #thermal-receipt-container * {
+            visibility: visible !important;
         }
-        .receipt-box {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            border: none;
+        #thermal-receipt-container {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            border: none !important;
         }
     }
 </style>
@@ -147,7 +146,8 @@ st.markdown(RECEIPT_CSS, unsafe_allow_html=True)
 # 2. DATABASE MANAGEMENT
 # ---------------------------------------------------------
 def get_connection():
-    conn = sqlite3.connect("pharmacy_multi.db", timeout=20, check_same_thread=False)
+    conn = sqlite3.connect("pharmacy_multi.db", timeout=30, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")  # Prevents database locks
     return conn
 
 def init_db():
@@ -222,7 +222,7 @@ if not st.session_state.authenticated:
     st.title("🔒 A Pharma POS Login")
     st.info("Default Login -> **Admin:** `admin` / `admin123` | **Staff:** `staff1` / `staff123`")
     
-    col1, col2 = st.columns([1, 2])
+    col1, _ = st.columns([1, 2])
     with col1:
         u = st.text_input("Username")
         p = st.text_input("Password", type="password")
@@ -236,7 +236,7 @@ if not st.session_state.authenticated:
 st.sidebar.markdown("## 💊 **A Pharma**")
 st.sidebar.markdown(f"**User:** `{st.session_state.username}` | **Role:** `{st.session_state.role.upper()}`")
 
-if st.sidebar.button("🔄 Sync & Refresh Data", use_container_width=True):
+if st.sidebar.button("🔄 Refresh Data", use_container_width=True):
     st.rerun()
 
 if st.sidebar.button("🚪 Logout", use_container_width=True):
@@ -246,12 +246,12 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. DASHBOARDS ACCORDING TO ROLE
+# 6. DASHBOARDS
 # ---------------------------------------------------------
 
 # ==================== STAFF DASHBOARD ====================
 if st.session_state.role == "staff":
-    st.title("🛒 Staff Billing Counter - A Pharma")
+    st.title("🛒 Billing Counter")
     
     conn = get_connection()
     inventory_df = pd.read_sql("SELECT id, name, category, price, stock FROM inventory WHERE stock > 0", conn)
@@ -260,7 +260,7 @@ if st.session_state.role == "staff":
     col1, col2 = st.columns([1.3, 1])
 
     with col1:
-        st.subheader("Add Medicines to Bill")
+        st.subheader("Select Items")
         cust_name = st.text_input("Customer Name", value="Walk-in Customer")
         
         if not inventory_df.empty:
@@ -268,7 +268,7 @@ if st.session_state.role == "staff":
             categories = ["All"] + list(inventory_df['category'].dropna().unique())
             
             with filter_col1:
-                selected_cat = st.selectbox("Filter Category", categories)
+                selected_cat = st.selectbox("Category", categories)
             with filter_col2:
                 search_query = st.text_input("🔎 Search Medicine", "")
 
@@ -279,13 +279,13 @@ if st.session_state.role == "staff":
                 filtered_df = filtered_df[filtered_df['name'].str.contains(search_query, case=False, na=False)]
 
             if not filtered_df.empty:
-                selected_med = st.selectbox("Select Medicine", filtered_df['name'].tolist())
+                selected_med = st.selectbox("Medicine", filtered_df['name'].tolist())
                 med_info = filtered_df[filtered_df['name'] == selected_med].iloc[0]
                 
                 in_cart_qty = sum(item['qty'] for item in st.session_state.cart if item['name'] == selected_med)
                 available_stock = int(med_info['stock']) - in_cart_qty
 
-                st.info(f"Available Stock: **{available_stock}** | Unit Price: **Rs. {med_info['price']:.2f}**")
+                st.info(f"Available Stock: **{available_stock}** | Price: **Rs. {med_info['price']:.2f}**")
                 
                 if available_stock > 0:
                     qty = st.number_input("Quantity", min_value=1, max_value=available_stock, value=1)
@@ -305,16 +305,16 @@ if st.session_state.role == "staff":
                                 'qty': qty,
                                 'total': qty * med_info['price']
                             })
-                        st.success(f"Added {qty} x {selected_med} to cart.")
+                        st.success(f"Added {qty} x {selected_med}")
                         st.rerun()
                 else:
-                    st.warning("Selected medicine is out of stock!")
+                    st.warning("Out of stock!")
             else:
-                st.warning("No medicines match your search criteria.")
+                st.warning("No medicine found.")
         else:
-            st.warning("No available inventory found. Please contact Administrator.")
+            st.warning("No items in inventory.")
 
-        st.subheader("Cart Items")
+        st.subheader("Cart")
         if st.session_state.cart:
             cart_df = pd.DataFrame(st.session_state.cart)
             st.dataframe(cart_df[['name', 'price', 'qty', 'total']], use_container_width=True)
@@ -323,14 +323,14 @@ if st.session_state.role == "staff":
                 st.session_state.cart = []
                 st.rerun()
         else:
-            st.caption("Cart is currently empty.")
+            st.caption("Cart is empty.")
 
     with col2:
-        st.subheader("Checkout & Receipt")
+        st.subheader("Checkout")
         if st.session_state.cart:
             subtotal = sum(item['total'] for item in st.session_state.cart)
             
-            # Auto 10% Discount and 3% Tax
+            # Auto 10% Discount & Auto 3% Tax
             discount = st.number_input("Discount (%)", min_value=0.0, max_value=100.0, value=10.0)
             tax = st.number_input("Tax (%)", min_value=0.0, max_value=100.0, value=3.0)
 
@@ -343,24 +343,29 @@ if st.session_state.role == "staff":
             st.markdown(f"**Tax ({tax:.1f}%):** +Rs. {tax_amount:.2f}")
             st.markdown(f"### **Grand Total:** Rs. {grand_total:.2f}")
 
-            if st.button("✅ Complete Sale & Print Receipt", use_container_width=True):
+            if st.button("✅ Complete Sale & Thermal Print", use_container_width=True):
                 bill_id = f"BILL-{int(time.time())}"
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 conn = get_connection()
                 c = conn.cursor()
 
-                for item in st.session_state.cart:
-                    c.execute("""INSERT INTO sales 
-                                (bill_id, customer_name, medicine_name, qty, unit_price, total_price, subtotal, discount_pct, tax_pct, grand_total, sold_by, timestamp)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                              (bill_id, cust_name, item['name'], item['qty'], item['price'], item['total'],
-                               subtotal, discount, tax, grand_total, st.session_state.username, now))
+                try:
+                    for item in st.session_state.cart:
+                        c.execute("""INSERT INTO sales 
+                                    (bill_id, customer_name, medicine_name, qty, unit_price, total_price, subtotal, discount_pct, tax_pct, grand_total, sold_by, timestamp)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  (bill_id, cust_name, item['name'], item['qty'], item['price'], item['total'],
+                                   subtotal, discount, tax, grand_total, st.session_state.username, now))
 
-                    c.execute("UPDATE inventory SET stock = stock - ? WHERE id = ?", (item['qty'], item['id']))
+                        c.execute("UPDATE inventory SET stock = stock - ? WHERE id = ?", (item['qty'], item['id']))
 
-                conn.commit()
-                conn.close()
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"Transaction Error: {e}")
+                finally:
+                    conn.close()
 
                 receipt_obj = {
                     'bill_id': bill_id,
@@ -376,14 +381,14 @@ if st.session_state.role == "staff":
 
                 st.session_state.last_receipt = receipt_obj
 
-                # 🖨️ خودکار پرنٹنگ کو بیک گراؤنڈ تھریڈ میں بھیجیں
+                # تھرمل پرنٹر پر بیک گراؤنڈ پرنٹ کا حکم
                 print_receipt_in_background(receipt_obj)
 
                 st.session_state.cart = []
-                st.success("Sale processed & sent to printer!")
+                st.success("Sale Complete! Receipt sent to Thermal Printer.")
                 st.rerun()
 
-        # Receipt Layout
+        # Thermal Receipt View
         if st.session_state.last_receipt:
             r = st.session_state.last_receipt
             items_html = ""
@@ -396,51 +401,51 @@ if st.session_state.role == "staff":
                 """
 
             receipt_html = f"""
-            <div class="receipt-box" id="thermal-receipt">
-                <div class="receipt-header">
-                    <h2>A PHARMA</h2>
-                    <p>Multi-Counter POS System</p>
-                    <p>Bill #: {r['bill_id']}<br>Date: {r['date']}</p>
+            <div id="thermal-receipt-container">
+                <div class="receipt-box">
+                    <div class="receipt-header">
+                        <h3>A PHARMA</h3>
+                        <p>Multi-Counter POS System<br>Bill #: {r['bill_id']}<br>Date: {r['date']}</p>
+                    </div>
+                    <div class="receipt-line"></div>
+                    <p><strong>Cust:</strong> {r['customer']}<br><strong>Cashier:</strong> {r['sold_by']}</p>
+                    <div class="receipt-line"></div>
+                    <table class="receipt-table">
+                        <thead>
+                            <tr><th>Item</th><th class="num">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {items_html}
+                        </tbody>
+                    </table>
+                    <div class="receipt-line"></div>
+                    <table class="receipt-table">
+                        <tr><td>Subtotal</td><td class="num">{r['subtotal']:.2f}</td></tr>
+                        <tr><td>Discount</td><td class="num">-{r['discount']:.2f}</td></tr>
+                        <tr><td>Tax</td><td class="num">+{r['tax']:.2f}</td></tr>
+                        <tr><td><strong>Grand Total</strong></td><td class="num"><strong>Rs. {r['grand_total']:.2f}</strong></td></tr>
+                    </table>
+                    <div class="receipt-line"></div>
+                    <p class="text-center">Thank you! Get Well Soon!</p>
                 </div>
-                <div class="receipt-line"></div>
-                <p><strong>Customer:</strong> {r['customer']}<br><strong>Cashier:</strong> {r['sold_by']}</p>
-                <div class="receipt-line"></div>
-                <table class="receipt-table">
-                    <thead>
-                        <tr><th>Item</th><th class="num">Amount</th></tr>
-                    </thead>
-                    <tbody>
-                        {items_html}
-                    </tbody>
-                </table>
-                <div class="receipt-line"></div>
-                <table class="receipt-table">
-                    <tr><td>Subtotal</td><td class="num">{r['subtotal']:.2f}</td></tr>
-                    <tr><td>Discount</td><td class="num">-{r['discount']:.2f}</td></tr>
-                    <tr><td>Tax</td><td class="num">+{r['tax']:.2f}</td></tr>
-                    <tr><td><strong>Grand Total</strong></td><td class="num"><strong>Rs. {r['grand_total']:.2f}</strong></td></tr>
-                </table>
-                <div class="receipt-line"></div>
-                <p class="text-center">Thank you! Get Well Soon!</p>
             </div>
             """
             st.markdown(receipt_html, unsafe_allow_html=True)
             
-            # Browser Manual Print Option (If physical printer isn't connected)
-            if st.button("🖨️ Manual Print (Browser Dialogue)", use_container_width=True):
+            if st.button("🖨️ Browser Print Dialog", use_container_width=True):
                 st.components.v1.html("<script>window.print();</script>", height=0)
 
 # ==================== ADMIN DASHBOARD ====================
 elif st.session_state.role == "admin":
-    st.title("⚙️ Admin Dashboard - A Pharma")
+    st.title("⚙️ Admin Dashboard")
 
     conn = get_connection()
     low_stock_df = pd.read_sql("SELECT name, stock FROM inventory WHERE stock <= 5", conn)
     conn.close()
 
     if not low_stock_df.empty:
-        st.error(f"⚠️ **Low Stock Alert ({len(low_stock_df)} items remaining <= 5):** " + 
-                 ", ".join([f"{row['name']} ({row['stock']} left)" for _, row in low_stock_df.iterrows()]))
+        st.error(f"⚠️ **Low Stock Alert ({len(low_stock_df)} items <= 5):** " + 
+                 ", ".join([f"{row['name']} ({row['stock']})" for _, row in low_stock_df.iterrows()]))
 
     tab1, tab2, tab3 = st.tabs(["📦 Inventory Management", "📊 Sales Analytics", "👤 User Management"])
 
@@ -458,7 +463,7 @@ elif st.session_state.role == "admin":
         with col_d:
             stock = st.number_input("Stock Qty", min_value=0, step=1)
 
-        if st.button("💾 Save Medicine"):
+        if st.button("💾 Save Item"):
             if med_name:
                 conn = get_connection()
                 c = conn.cursor()
@@ -470,12 +475,12 @@ elif st.session_state.role == "admin":
                              stock=stock + excluded.stock""", (med_name, category, price, stock))
                 conn.commit()
                 conn.close()
-                st.success(f"Inventory item '{med_name}' updated successfully.")
+                st.success(f"'{med_name}' updated successfully.")
                 st.rerun()
             else:
-                st.error("Please enter a valid medicine name.")
+                st.error("Please enter a medicine name.")
 
-        st.subheader("Current Stock Inventory")
+        st.subheader("Current Stock")
         conn = get_connection()
         inv_df = pd.read_sql("SELECT * FROM inventory", conn)
         conn.close()
@@ -484,12 +489,11 @@ elif st.session_state.role == "admin":
             st.dataframe(inv_df, use_container_width=True)
             
             st.markdown("---")
-            st.caption("⚡ Quick Stock Adjuster")
             q_col1, q_col2, q_col3 = st.columns([2, 1, 1])
             with q_col1:
                 selected_stock_med = st.selectbox("Select Medicine to Modify Stock", inv_df['name'].tolist())
             with q_col2:
-                new_stock_val = st.number_input("New Total Stock", min_value=0, step=1)
+                new_stock_val = st.number_input("New Stock Value", min_value=0, step=1)
             with q_col3:
                 st.write("")
                 st.write("")
@@ -499,10 +503,10 @@ elif st.session_state.role == "admin":
                     c.execute("UPDATE inventory SET stock = ? WHERE name = ?", (new_stock_val, selected_stock_med))
                     conn.commit()
                     conn.close()
-                    st.success(f"Updated {selected_stock_med} stock to {new_stock_val}")
+                    st.success(f"Stock updated to {new_stock_val}")
                     st.rerun()
         else:
-            st.info("No items currently in inventory.")
+            st.info("Inventory is empty.")
 
     # TAB 2: SALES ANALYTICS
     with tab2:
@@ -518,30 +522,29 @@ elif st.session_state.role == "admin":
             items_sold = sales_df['qty'].sum()
 
             col_m1.metric("Total Revenue", f"Rs. {total_rev:,.2f}")
-            col_m2.metric("Total Transactions", total_bills)
-            col_m3.metric("Total Items Sold", items_sold)
+            col_m2.metric("Total Bills", total_bills)
+            col_m3.metric("Items Sold", items_sold)
 
             csv_data = sales_df.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Download Sales Data as CSV",
+                label="📥 Download Sales Data CSV",
                 data=csv_data,
                 file_name=f"sales_report_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
 
-            st.subheader("Recent Transactions")
             st.dataframe(sales_df, use_container_width=True)
         else:
             st.info("No sales data recorded yet.")
 
     # TAB 3: USER MANAGEMENT
     with tab3:
-        st.subheader("Create New User")
+        st.subheader("Add New User")
         u_col1, u_col2, u_col3 = st.columns(3)
         with u_col1:
-            new_u = st.text_input("New Username")
+            new_u = st.text_input("Username")
         with u_col2:
-            new_p = st.text_input("New Password", type="password")
+            new_p = st.text_input("Password", type="password")
         with u_col3:
             new_r = st.selectbox("Role", ["staff", "admin"])
 
@@ -552,7 +555,7 @@ elif st.session_state.role == "admin":
                 try:
                     c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (new_u, new_p, new_r))
                     conn.commit()
-                    st.success(f"User '{new_u}' added successfully!")
+                    st.success(f"User '{new_u}' added!")
                 except sqlite3.IntegrityError:
                     st.error("Username already exists!")
                 finally:
@@ -560,7 +563,7 @@ elif st.session_state.role == "admin":
             else:
                 st.error("Username and Password are required.")
 
-        st.subheader("System Users")
+        st.subheader("Users")
         conn = get_connection()
         users_df = pd.read_sql("SELECT id, username, role FROM users", conn)
         conn.close()
@@ -568,7 +571,6 @@ elif st.session_state.role == "admin":
 
         if len(users_df) > 1:
             st.markdown("---")
-            st.caption("🗑️ Delete User Account")
             d_col1, d_col2 = st.columns([2, 1])
             with d_col1:
                 other_users = users_df[users_df['username'] != st.session_state.username]['username'].tolist()
