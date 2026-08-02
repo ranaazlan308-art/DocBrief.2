@@ -129,7 +129,7 @@ st.markdown("""
         border-radius: 8px !important;
     }
     input {
-        color: #000001 !important;
+        color: #0001111 !important;
     }
 </style>
 """, unsafe_allow_html=True)
